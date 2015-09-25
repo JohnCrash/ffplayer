@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sdlplayer", "sdlplayer.vcxp
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ffmpeg", "..\ffmpeg\ffmpeg.vcxproj", "{24A79194-6C0E-4304-B1C8-50CA76215683}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "..\test\test.vcxproj", "{171FD8E8-BADA-4FFD-9954-DD9A0973B6AA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -27,6 +29,10 @@ Global
 		{24A79194-6C0E-4304-B1C8-50CA76215683}.Debug|Win32.Build.0 = Debug|Win32
 		{24A79194-6C0E-4304-B1C8-50CA76215683}.Release|Win32.ActiveCfg = Release|Win32
 		{24A79194-6C0E-4304-B1C8-50CA76215683}.Release|Win32.Build.0 = Release|Win32
+		{171FD8E8-BADA-4FFD-9954-DD9A0973B6AA}.Debug|Win32.ActiveCfg = Debug|Win32
+		{171FD8E8-BADA-4FFD-9954-DD9A0973B6AA}.Debug|Win32.Build.0 = Debug|Win32
+		{171FD8E8-BADA-4FFD-9954-DD9A0973B6AA}.Release|Win32.ActiveCfg = Release|Win32
+		{171FD8E8-BADA-4FFD-9954-DD9A0973B6AA}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
