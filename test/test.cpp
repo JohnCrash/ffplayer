@@ -7,7 +7,8 @@
 int _tmain(int argc, _TCHAR* argv[])
 {
 
-	read_media_file("g:\\2.mp4");
+	//read_media_file("g:\\2.mp4");
+	read_media_file("g:\\1.m3u8");
 	return 0;
 }
 
