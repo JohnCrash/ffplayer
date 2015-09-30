@@ -8,3 +8,5 @@ proj.android/assets/
 proj.android/obj/
 proj.android/bin/
 proj.android/libs/
+ffmpeg/Debug/
+test/Debug/

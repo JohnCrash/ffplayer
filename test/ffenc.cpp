@@ -124,14 +124,15 @@ AVDictionary **setup_find_stream_info_opts(AVFormatContext *s,
 	return opts;
 }
 
-int read_media_file(const char *filename)
+int read_media_file(const char *filename,const char *outfile)
 {
-	AVFormatContext *ic;
+	AVFormatContext *ic, *ofmt_ctx;
 	AVInputFormat *file_iformat = NULL;
 	AVDictionary * format_opts, ** opts = NULL;
 	AVPacket pkt1,* pkt = &pkt1;
 	int err,i,ret;
 	int orig_nb_streams;
+	AVOutputFormat *ofmt = NULL;
 
 #if CONFIG_AVDEVICE
 	avdevice_register_all();
@@ -171,6 +172,50 @@ int read_media_file(const char *filename)
 
 	av_log_streams(ic);
 
+	
+	/*
+	 * 输出到新的文件中，为输出流产生信息
+	*/
+	avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, outfile);
+	if (!ofmt_ctx){
+		printf("avformat_alloc_output_context2 return failed.");
+		return 0;
+	}
+	for (i = 0; i < ic->nb_streams; i++) {
+		AVStream *in_stream = ic->streams[i];
+		AVStream *out_stream = avformat_new_stream(ofmt_ctx, in_stream->codec->codec);
+		if (!out_stream) {
+			printf("Failed allocating output stream\n");
+			ret = AVERROR_UNKNOWN;
+			return 0;
+		}
+
+		ret = avcodec_copy_context(out_stream->codec, in_stream->codec);
+		if (ret < 0) {
+			printf("Failed to copy context from input to output stream codec context\n");
+			return 0;
+		}
+		out_stream->codec->codec_tag = 0;
+		if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+			out_stream->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+	}
+	/*
+	* 打开一输出文件流
+	*/
+	ofmt = ofmt_ctx->oformat;
+	if (!(ofmt->flags & AVFMT_NOFILE)) {
+		ret = avio_open(&ofmt_ctx->pb, outfile, AVIO_FLAG_WRITE);
+		if (ret < 0) {
+			printf("Could not open output file '%s'\n", outfile);
+			return 0;
+		}
+	}
+	ret = avformat_write_header(ofmt_ctx, NULL);
+	if (ret < 0) {
+		printf("Error occurred when opening output file\n");
+		return 0;
+	}
+	av_dump_format(ofmt_ctx, 0, outfile, 1);
 	int total_size = 0;
 	for (;;){
 		ret = av_read_frame(ic, pkt);
@@ -187,8 +232,273 @@ int read_media_file(const char *filename)
 		printf("[%d] size=%d dts=%llu pts=%llu flags=%X dur=%d time=%.2fs\n",
 			pkt->stream_index,pkt->size,pkt->dts,pkt->pts,pkt->flags,pkt->duration,
 			((double)pkt->pts*st->time_base.num)/(double)st->time_base.den);
+
+		AVStream *in_stream, *out_stream;
+		in_stream = ic->streams[pkt->stream_index];
+		out_stream = ic->streams[pkt->stream_index];
+		/*
+			重新设置dts和pts?
+		*/
+		pkt->pts = av_rescale_q_rnd(pkt->pts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+		pkt->dts = av_rescale_q_rnd(pkt->dts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+		pkt->duration = av_rescale_q(pkt->duration, in_stream->time_base, out_stream->time_base);
+		pkt->pos = -1;
+
+		ret = av_interleaved_write_frame(ofmt_ctx, pkt);
+		if (ret < 0) {
+			printf("Error muxing packet\n");
+			break;
+		}
+		av_free_packet(pkt);
 	}
 	printf("total size : %d bytes\n", total_size);
 	avformat_close_input(&ic);
+
+	av_write_trailer(ofmt_ctx);
+	/* close output */
+	if (ofmt_ctx && !(ofmt->flags & AVFMT_NOFILE))
+		avio_closep(&ofmt_ctx->pb);
+
+	avformat_free_context(ofmt_ctx);
 	return 0;
+}
+
+/**
+* 设置日志输出函数
+*/
+static tLogFunc _gLogFunc = NULL;
+void ffSetLogHanlder(tLogFunc logfunc)
+{
+	_gLogFunc = logfunc;
+}
+
+/**
+* 日志输出
+*/
+void ffLog(const char * fmt,...)
+{
+	char buf[1024];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buf, 1024 - 3, fmt, args);
+	va_end(args);
+	if(_gLogFunc)
+		_gLogFunc(buf);
+}
+
+/*
+ * 向AVFormatContext加入新的流
+ */
+static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
+	int w,int h,int stream_frame_rate,int stream_bit_rate)
+{
+	AVCodec *codec;
+	AVStream *st;
+	AVCodecContext *c;
+	int i;
+
+	codec = avcodec_find_encoder(codec_id);
+	if (!codec)
+	{
+		ffLog("Could not find encoder '%s'\n", avcodec_get_name(codec_id));
+		return -1;
+	}
+
+	st = avformat_new_stream(pec->_ctx, codec);
+	if (!st)
+	{
+		ffLog("Could not allocate stream\n");
+		return -1;
+	}
+	st->id = pec->_ctx->nb_streams - 1;
+	c = st->codec;
+
+	switch (codec->type)
+	{
+	case AVMEDIA_TYPE_AUDIO:
+		pec->_audio_st = st;
+
+		c->sample_fmt = codec->sample_fmts ?
+			codec->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+		c->bit_rate = stream_bit_rate;
+		c->sample_rate = stream_frame_rate;
+		if (codec->supported_samplerates) {
+			c->sample_rate = codec->supported_samplerates[0];
+			for (i = 0; codec->supported_samplerates[i]; i++) {
+				if (codec->supported_samplerates[i] == stream_frame_rate)
+					c->sample_rate = stream_frame_rate;
+			}
+		}
+		c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
+		c->channel_layout = AV_CH_LAYOUT_STEREO;
+		if (codec->channel_layouts) {
+			c->channel_layout = codec->channel_layouts[0];
+			for (i = 0; codec->channel_layouts[i]; i++) {
+				if (codec->channel_layouts[i] == AV_CH_LAYOUT_STEREO)
+					c->channel_layout = AV_CH_LAYOUT_STEREO;
+			}
+		}
+		c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
+		st->time_base.den = 1;
+		st->time_base.num = c->sample_rate;
+		break;
+	case AVMEDIA_TYPE_VIDEO:
+		pec->_video_st = st;
+
+		c->codec_id = codec_id;
+		c->bit_rate = stream_bit_rate;
+		/* 分辨率必须是2的倍数，这里需要作检查 */
+		c->width = w;
+		c->height = h;
+		st->time_base.den = 1;
+		st->time_base.num = stream_frame_rate;
+		c->time_base = st->time_base;
+
+		c->gop_size = 12; /* emit one intra frame every twelve frames at most */
+		c->pix_fmt = STREAM_PIX_FMT;
+		if (c->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
+			/* just for testing, we also add B frames */
+			c->max_b_frames = 2;
+		}
+		if (c->codec_id == AV_CODEC_ID_MPEG1VIDEO) {
+			/* Needed to avoid using macroblocks in which some coeffs overflow.
+			* This does not happen with normal video, it just happens here as
+			* the motion of the chroma plane does not match the luma plane. */
+			c->mb_decision = 2;
+		}
+		break;
+	default:
+		ffLog("Unknow stream type\n");
+		return -1;
+	}
+
+	/* Some formats want stream headers to be separate. */
+	if (pec->_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+		c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+	return 0;
+}
+
+/*
+ * 关闭流
+ */
+static void close_stream(AVStream *st)
+{
+	avcodec_close(st->codec);
+	/*
+		av_frame_free(&ost->frame);
+		av_frame_free(&ost->tmp_frame);
+		sws_freeContext(ost->sws_ctx);
+		swr_free(&ost->swr_ctx);
+	*/
+}
+
+/**
+ * 创建编码上下文
+ */
+AVEncodeContext* ffCreateEncodeContext(const char* filename, 
+	int w, int h, int frameRate, int videoBitRate,AVCodecID video_codec_id,
+	int sampleRate,int audioBitRate, AVCodecID audio_codec_id)
+{
+	AVEncodeContext * pec;
+	AVFormatContext *ofmt_ctx;
+	AVOutputFormat *ofmt;
+	int ret,err,i;
+
+	pec = (AVEncodeContext *)malloc(sizeof(AVEncodeContext));
+	if (!pec)
+	{
+		ffLog("ffCreateEncodeContext malloc return nullptr\n");
+		return pec;
+	}
+	memset(pec, 0, sizeof(AVEncodeContext));
+	pec->_width = w;
+	pec->_height = h;
+	pec->_fileName = strdup(filename);
+	/*
+	 * 创建输出上下文
+	 */
+	avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, filename);
+	if (!ofmt_ctx){
+		ffLog("avformat_alloc_output_context2 return failed.");
+		ffCloseEncodeContext(pec);
+		return NULL;
+	}
+	pec->_ctx = ofmt_ctx;
+	/*
+	 * 加入视频流和音频流
+	 */
+	if (add_stream(pec, video_codec_id, w, h, frameRate, videoBitRate) < 0)
+	{
+		ffLog("Add video stream failed\n");
+		ffCloseEncodeContext(pec);
+		return NULL;
+	}
+	if (add_stream(pec, audio_codec_id, 0, 0, sampleRate, audioBitRate) < 0)
+	{
+		ffLog("Add audio stream failed\n");
+		ffCloseEncodeContext(pec);
+		return NULL;
+	}
+	/*
+	 * 如果有必要打开一个文件输出流
+	 */
+	ofmt = ofmt_ctx->oformat;
+	if (!(ofmt->flags & AVFMT_NOFILE)) {
+		ret = avio_open(&ofmt_ctx->pb, filename, AVIO_FLAG_WRITE);
+		if (ret < 0) {
+			ffLog("Could not open output file '%s'\n", filename);
+			ffCloseEncodeContext(pec);
+			return NULL;
+		}
+	}
+	/*
+	 * 写入媒体头文件
+	 */
+	ret = avformat_write_header(ofmt_ctx, NULL);
+	if (ret < 0) {
+		ffLog("Error occurred when opening output file \n");
+		ffCloseEncodeContext(pec);
+		return NULL;
+	}
+	av_dump_format(ofmt_ctx, 0, filename, 1);
+
+	return pec;
+}
+
+/**
+* 关闭编码上下文
+*/
+void ffCloseEncodeContext(AVEncodeContext *pec)
+{
+	if (pec)
+	{
+		if (pec->_ctx)
+		{
+			/* Write the trailer, if any. The trailer must be written before you
+			* close the CodecContexts open when you wrote the header; otherwise
+			* av_write_trailer() may try to use memory that was freed on
+			* av_codec_close(). 
+			*/
+			av_write_trailer(pec->_ctx);
+
+			/*
+			 * 关闭编码器
+			 */
+			if (pec->_video_st)
+				close_stream(pec->_video_st);
+			if (pec->_audio_st)
+				close_stream(pec->_audio_st);
+
+			/*
+			 * 如果有必要关闭文件流
+			 */
+			if (pec->_ctx->oformat && !(pec->_ctx->oformat->flags & AVFMT_NOFILE))
+			{
+				avio_closep(&pec->_ctx->pb);
+			}
+			avformat_free_context(pec->_ctx);
+		}
+		free((void*)pec->_fileName);
+	}
+	free(pec);
 }
