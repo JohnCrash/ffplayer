@@ -38,5 +38,8 @@
     <ClCompile Include="ffenc.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="dec.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

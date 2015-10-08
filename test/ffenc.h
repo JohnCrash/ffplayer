@@ -42,6 +42,25 @@ int read_media_file(const char *filename, const char *outfile);
 #define STREAM_FRAME_RATE 25 /* 25 images/s */
 #define STREAM_PIX_FMT    AV_PIX_FMT_YUV420P /* default pix_fmt */
 
+#define NUM_DATA_POINTERS 3
+enum AVRawType
+{
+	RAW_IMAGE,
+	RAW_AUDIO,
+};
+struct AVRaw
+{
+	uint8_t *data[NUM_DATA_POINTERS];
+	int linesize[NUM_DATA_POINTERS];
+	int width;
+	int height;
+	int channels;
+	int samples;
+	int format;
+	AVRawType type;
+	AVRaw *next;
+};
+
 struct AVEncodeContext
 {
 	const char *_fileName;
@@ -50,13 +69,28 @@ struct AVEncodeContext
 	AVFormatContext *_ctx;
 	AVStream *_video_st;
 	AVStream * _audio_st;
+	AVFrame * _video_frame;
+	AVFrame * _audio_frame;
+	AVFrame * _video_tmp_frame;
+	AVFrame * _audio_tmp_frame;
+	double _video_t;
+	double _audio_t;
+	double _audio_tincr;
+	double _audio_tincr2;
+	SwrContext *_audio_sws_ctx;
+	SwrContext *_audio_swr_ctx;
+	int has_audio, has_video, encode_audio, encode_video;
+	int _buffer_size; //原生数据缓冲区尺寸在kb
+	int _nb_raws; //原生数据帧个数
+	AVRaw * _head;
+	AVRaw * _tail;
 };
 
 typedef void (*tLogFunc)(char *s);
 /**
  * 设置日志输出函数
  */
-void ffSetLogHanlder( tLogFunc logfunc );
+void ffSetLogHandler( tLogFunc logfunc );
 
 /**
  * 日志输出
@@ -77,7 +111,7 @@ void ffLog(const char * fmt, ...);
 AVEncodeContext* ffCreateEncodeContext( 
 	const char* filename,
 	int w, int h, int frameRate, int videoBitRate, AVCodecID video_codec_id,
-	int sampleRate, int audioBitRate, AVCodecID audio_codec_id);
+	int sampleRate, int audioBitRate, AVCodecID audio_codec_id,AVDictionary * opt_arg);
 
 /**
  * 关闭编码上下文
@@ -85,11 +119,32 @@ AVEncodeContext* ffCreateEncodeContext(
 void ffCloseEncodeContext( AVEncodeContext *pec);
 
 /**
- * 写入视频帧
+ * 加入音频帧或者视频帧
  */
+void ffAddFrame(AVEncodeContext *pec,AVRaw *praw);
 
-/**
- * 加入音频帧
+/*
+ * 创建视频原始数据帧格式为YUV420P
+ * pdata必须是一个以pdata[0]起始的通过malloc分配的整块空间。
  */
+AVRaw * ffMakeYUV420PRaw(
+	uint8_t * pdata[NUM_DATA_POINTERS],
+	int linesize[NUM_DATA_POINTERS], 
+	int w, int h);
+
+/*
+ * 创建音频原始数据帧格式为S16
+ */
+AVRaw * ffMakeAudioS16Raw(uint8_t * pdata,int chanles,int samples);
+
+/*
+ * 释放原生数据
+ */
+void ffFreeRaw(AVRaw * praw);
+
+/*
+ * 取缓冲大小,单位kb
+ */
+int ffGetBufferSize(AVEncodeContext *pec);
 
 #endif
