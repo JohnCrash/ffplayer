@@ -1,6 +1,10 @@
 #ifndef __FFENC__H__
 #define __FFENC__H__
 
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+
 #define inline __inline
 #include "config.h"
 #define HAVE_STRUCT_POLLFD 1
@@ -36,6 +40,7 @@ extern "C"
 
 	#include "libavutil/timestamp.h"
 }
+
 int read_media_file(const char *filename, const char *outfile);
 
 #define STREAM_DURATION   10.0
@@ -84,6 +89,10 @@ struct AVEncodeContext
 	int _nb_raws; //原生数据帧个数
 	AVRaw * _head;
 	AVRaw * _tail;
+	std::thread * _encode_thread;
+	int _stop_thread;
+	std::mutex *_mutex;
+	std::condition_variable *_cond;
 };
 
 typedef void (*tLogFunc)(char *s);
@@ -144,6 +153,11 @@ void ffFreeRaw(AVRaw * praw);
 
 /*
  * 取缓冲大小,单位kb
+ */
+int ffGetBufferSizeKB(AVEncodeContext *pec);
+
+/*
+ * 取缓冲区大小
  */
 int ffGetBufferSize(AVEncodeContext *pec);
 

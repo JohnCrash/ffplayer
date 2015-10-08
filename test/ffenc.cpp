@@ -303,6 +303,42 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 	return 0;
 }
 
+static AVRaw * ffPopFrame(AVEncodeContext * pec)
+{
+	std::unique_lock<std::mutex> lock(*pec->_mutex);
+	AVRaw * praw = NULL;
+	/*
+	 * 如果队列空就等待，当处于等待状态时_mutex被临时解锁
+	 */
+	if (!pec->_head)
+	{
+		pec->_cond->wait(lock);
+	}
+	if (pec->_head)
+	{
+		praw = pec->_head;
+		pec->_head = praw->next;
+		if (praw == pec->_tail)
+		{
+			pec->_tail = pec->_head;
+		}
+	}
+	return praw;
+}
+
+int encode_thread_proc(AVEncodeContext * pec)
+{
+	while (!pec->_stop_thread)
+	{
+		AVRaw * praw = ffPopFrame(pec);
+		/*
+		 * 压缩原生数据并写入到文件中
+		 */
+		ffFreeRaw(praw);
+	}
+	return 0;
+}
+
 /**
  * 创建编码上下文
  */
@@ -402,6 +438,14 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename,
 	}
 	av_dump_format(ofmt_ctx, 0, filename, 1);
 
+	/*
+	 * 启动压缩压缩线程
+	 * FIXME!
+	 *	  应该尝试分配多个线程并行压缩以榨取多处理器的全部性能。
+	 */
+	pec->_mutex = new std::mutex();
+	pec->_cond = new std::condition_variable();
+	pec->_encode_thread = new std::thread(encode_thread_proc,pec);
 	return pec;
 }
 
@@ -412,6 +456,14 @@ void ffCloseEncodeContext(AVEncodeContext *pec)
 {
 	if (pec)
 	{
+		/*
+		 * 停止压缩线程,压缩在没有数据可处理并且_encode_thread=1是退出
+		 */
+		if (pec->_encode_thread)
+		{
+			pec->_stop_thread = 1;
+			pec->_encode_thread->join();
+		}
 		if (pec->_ctx)
 		{
 			/* Write the trailer, if any. The trailer must be written before you
@@ -509,21 +561,62 @@ void ffFreeRaw(AVRaw * praw)
 	}
 }
 
-int ffGetBufferSize(AVEncodeContext *pec)
+int ffGetBufferSizeKB(AVEncodeContext *pec)
 {
 	return pec->_buffer_size;
 }
 
+int ffGetBufferSize(AVEncodeContext *pec)
+{
+	return pec->_nb_raws;
+}
+
+static int getAVRawSizeKB(AVRaw *praw)
+{
+	if (praw->type == RAW_IMAGE)
+	{
+		if (praw->format == AV_PIX_FMT_YUV420P)
+		{
+			/*
+			 * 图像如果是YUV420P,每个点占用12bpp
+			 */
+			return (int)(praw->width*praw->height * 12.0 / (8.0 * 1024));
+		}
+		else if (praw->format == AV_PIX_FMT_RGB24)
+		{
+			return (int)(praw->width*praw->height * 24.0 / (8.0 * 1024));
+		}
+	}
+	else
+	{
+		if (praw->format == AV_SAMPLE_FMT_S16)
+		{
+			return (int)(praw->channels*praw->samples / 1024.0);
+		}
+	}
+	/*
+	 * 未知的格式，不加入到统计中
+	 */
+	return 0;
+}
+
 void ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
 {
+	pec->_mutex->lock();
 	if (!pec->_head)
 	{
 		pec->_head = praw;
 		pec->_tail = praw;
+		pec->_nb_raws=1;
+		pec->_buffer_size = getAVRawSizeKB(praw);
 	}
 	else
 	{
 		pec->_tail->next = praw;
 		pec->_tail = praw;
+		pec->_nb_raws++;
+		pec->_buffer_size += getAVRawSizeKB(praw);
 	}
+	pec->_cond->notify_one();
+	pec->_mutex->unlock();
 }
