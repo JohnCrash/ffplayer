@@ -66,6 +66,17 @@ struct AVRaw
 	AVRaw *next;
 };
 
+struct AVCtx
+{
+	AVFrame * frame;
+	AVFrame * tmp_frame;
+
+	int64_t next_pts;
+	int samples_count;
+
+	SwrContext *swr_ctx;
+};
+
 struct AVEncodeContext
 {
 	const char *_fileName;
@@ -74,17 +85,11 @@ struct AVEncodeContext
 	AVFormatContext *_ctx;
 	AVStream *_video_st;
 	AVStream * _audio_st;
-	AVFrame * _video_frame;
-	AVFrame * _audio_frame;
-	AVFrame * _video_tmp_frame;
-	AVFrame * _audio_tmp_frame;
-	double _video_t;
-	double _audio_t;
-	double _audio_tincr;
-	double _audio_tincr2;
-	SwrContext *_audio_sws_ctx;
-	SwrContext *_audio_swr_ctx;
-	int has_audio, has_video, encode_audio, encode_video;
+
+	AVCtx _vctx;
+	AVCtx _actx;
+
+	int has_audio, has_video, encode_audio, encode_video,isopen;
 	int _buffer_size; //原生数据缓冲区尺寸在kb
 	int _nb_raws; //原生数据帧个数
 	AVRaw * _head;
@@ -105,6 +110,11 @@ void ffSetLogHandler( tLogFunc logfunc );
  * 日志输出
  */
 void ffLog(const char * fmt, ...);
+
+/*
+ * 初始化ff库,注册设备，初始网络。
+ */
+void ffInit();
 
 /**
  * 创建编码上下文
@@ -130,7 +140,7 @@ void ffCloseEncodeContext( AVEncodeContext *pec);
 /**
  * 加入音频帧或者视频帧
  */
-void ffAddFrame(AVEncodeContext *pec,AVRaw *praw);
+int ffAddFrame(AVEncodeContext *pec,AVRaw *praw);
 
 /*
  * 创建视频原始数据帧格式为YUV420P

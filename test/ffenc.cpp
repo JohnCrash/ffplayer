@@ -1,5 +1,7 @@
 #include "ffenc.h"
 
+#define ERROR_BUFFER_SIZE 1024
+
 /**
 * 设置日志输出函数
 */
@@ -14,10 +16,10 @@ void ffSetLogHandler(tLogFunc logfunc)
 */
 void ffLog(const char * fmt,...)
 {
-	char buf[1024];
+	char buf[ERROR_BUFFER_SIZE];
 	va_list args;
 	va_start(args, fmt);
-	vsnprintf(buf, 1024 - 3, fmt, args);
+	vsnprintf(buf, ERROR_BUFFER_SIZE - 3, fmt, args);
 	va_end(args);
 	if(_gLogFunc)
 		_gLogFunc(buf);
@@ -87,8 +89,8 @@ static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
 		/* 分辨率必须是2的倍数，这里需要作检查 */
 		c->width = w;
 		c->height = h;
-		st->time_base.den = 1;
-		st->time_base.num = stream_frame_rate;
+		st->time_base.den = stream_frame_rate;
+		st->time_base.num = 1;
 		c->time_base = st->time_base;
 
 		c->gop_size = 12; /* emit one intra frame every twelve frames at most */
@@ -175,15 +177,15 @@ static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,AVDictionar
 	ret = avcodec_open2(c, codec, &opt);
 	av_dict_free(&opt);
 	if (ret < 0) {
-		char errmsg[1024];
-		av_strerror(ret, errmsg, 1024);
+		char errmsg[ERROR_BUFFER_SIZE];
+		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
 		ffLog("Could not open video codec: %s\n",errmsg);
 		return -1;
 	}
 
 	/* allocate and init a re-usable frame */
-	pec->_video_frame = alloc_picture(c->pix_fmt, c->width, c->height);
-	if (!pec->_video_frame) {
+	pec->_vctx.frame = alloc_picture(c->pix_fmt, c->width, c->height);
+	if (!pec->_vctx.frame) {
 		ffLog("Could not allocate video frame\n");
 		return -1;
 	}
@@ -191,10 +193,10 @@ static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,AVDictionar
 	/* If the output format is not YUV420P, then a temporary YUV420P
 	* picture is needed too. It is then converted to the required
 	* output format. */
-	pec->_video_tmp_frame = NULL;
+	pec->_vctx.tmp_frame = NULL;
 	if (c->pix_fmt != AV_PIX_FMT_YUV420P) {
-		pec->_video_tmp_frame = alloc_picture(AV_PIX_FMT_YUV420P, c->width, c->height);
-		if (!pec->_video_tmp_frame) {
+		pec->_vctx.tmp_frame = alloc_picture(AV_PIX_FMT_YUV420P, c->width, c->height);
+		if (!pec->_vctx.tmp_frame) {
 			ffLog("Could not allocate temporary picture\n");
 			return -1;
 		}
@@ -258,45 +260,43 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 	ret = avcodec_open2(c, codec, &opt);
 	av_dict_free(&opt);
 	if (ret < 0) {
-		char errmsg[1024];
-		av_strerror(ret, errmsg, 1024);
+		char errmsg[ERROR_BUFFER_SIZE];
+		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
 		ffLog("Could not open audio codec: %s\n", errmsg);
 		return -1;
 	}
-
-	/* init signal generator */
-	pec->_audio_t = 0;
-	pec->_audio_tincr = 2 * M_PI * 110.0 / c->sample_rate;
-	/* increment frequency by 110 Hz per second */
-	pec->_audio_tincr2 = 2 * M_PI * 110.0 / c->sample_rate / c->sample_rate;
 
 	if (c->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE)
 		nb_samples = 10000;
 	else
 		nb_samples = c->frame_size;
 
-	pec->_audio_frame = alloc_audio_frame(c->sample_fmt, c->channel_layout,
+	pec->_actx.frame = alloc_audio_frame(c->sample_fmt, c->channel_layout,
 		c->sample_rate, nb_samples);
-	pec->_audio_tmp_frame = alloc_audio_frame(AV_SAMPLE_FMT_S16, c->channel_layout,
+	pec->_actx.tmp_frame = alloc_audio_frame(AV_SAMPLE_FMT_S16, c->channel_layout,
 		c->sample_rate, nb_samples);
+	if (!pec->_actx.frame)
+		return -1;
+	if (!pec->_actx.tmp_frame)
+		return -1;
 
 	/* create resampler context */
-	pec->_audio_swr_ctx = swr_alloc();
-	if (!pec->_audio_swr_ctx) {
-		ffLog("Could not allocate resampler context\n");
+	pec->_actx.swr_ctx = swr_alloc();
+	if (!pec->_actx.swr_ctx) {
+		ffLog("Could not allocate resampler context.\n");
 		return -1;
 	}
 
 	/* set options */
-	av_opt_set_int(pec->_audio_swr_ctx, "in_channel_count", c->channels, 0);
-	av_opt_set_int(pec->_audio_swr_ctx, "in_sample_rate", c->sample_rate, 0);
-	av_opt_set_sample_fmt(pec->_audio_swr_ctx, "in_sample_fmt", AV_SAMPLE_FMT_S16, 0);
-	av_opt_set_int(pec->_audio_swr_ctx, "out_channel_count", c->channels, 0);
-	av_opt_set_int(pec->_audio_swr_ctx, "out_sample_rate", c->sample_rate, 0);
-	av_opt_set_sample_fmt(pec->_audio_swr_ctx, "out_sample_fmt", c->sample_fmt, 0);
+	av_opt_set_int(pec->_actx.swr_ctx, "in_channel_count", c->channels, 0);
+	av_opt_set_int(pec->_actx.swr_ctx, "in_sample_rate", c->sample_rate, 0);
+	av_opt_set_sample_fmt(pec->_actx.swr_ctx, "in_sample_fmt", AV_SAMPLE_FMT_S16, 0);
+	av_opt_set_int(pec->_actx.swr_ctx, "out_channel_count", c->channels, 0);
+	av_opt_set_int(pec->_actx.swr_ctx, "out_sample_rate", c->sample_rate, 0);
+	av_opt_set_sample_fmt(pec->_actx.swr_ctx, "out_sample_fmt", c->sample_fmt, 0);
 
 	/* initialize the resampling context */
-	if ((ret = swr_init(pec->_audio_swr_ctx)) < 0) {
+	if ((ret = swr_init(pec->_actx.swr_ctx)) < 0) {
 		ffLog("Failed to initialize the resampling context\n");
 		return -1;
 	}
@@ -326,16 +326,278 @@ static AVRaw * ffPopFrame(AVEncodeContext * pec)
 	return praw;
 }
 
+AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
+{
+	if (praw->format == AV_PIX_FMT_YUV420P)
+	{
+		AVFrame * frame = ctx->frame;
+
+		/* when we pass a frame to the encoder, it may keep a reference to it
+		* internally;
+		* make sure we do not overwrite it here
+		*/
+		int ret = av_frame_make_writable(frame);
+		if (ret < 0)
+		{
+			char errmsg[ERROR_BUFFER_SIZE];
+			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
+			ffLog("make_video_frame av_frame_make_writable : %s\n", errmsg);
+			return NULL;
+		}
+		/*
+		 * 这里做数据复制
+		 */
+		if (frame->linesize[0] == praw->linesize[0])
+		{
+			memcpy(frame->data[0], praw->data[0], frame->linesize[0]*frame->height);
+			memcpy(frame->data[1], praw->data[1], frame->linesize[1] * frame->height / 2);
+			memcpy(frame->data[2], praw->data[2], frame->linesize[2] * frame->height / 2);
+		}
+		else
+		{
+			ffLog("make_video_frame linesize!=.\n");
+			return NULL;
+		}
+
+		frame->pts = ctx->next_pts++;
+		return frame;
+	}
+	else
+	{
+		//FIXME ! 格式转换
+		ffLog("Does not support format.\n");
+	}
+	return NULL;
+}
+
+static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt)
+{
+	/* rescale output packet timestamp values from codec to stream timebase */
+	av_packet_rescale_ts(pkt, *time_base, st->time_base);
+	pkt->stream_index = st->index;
+
+	/* Write the compressed frame to the media file. */
+	return av_interleaved_write_frame(fmt_ctx, pkt);
+}
+
+/*
+ * encode one video frame and send it to the muxer
+ * return 1 when encoding is finished, 0 otherwise
+ * 出错返回-1
+ */
+static int write_video_frame(AVEncodeContext * pec, AVRaw *praw)
+{
+	int ret;
+	AVCodecContext *c;
+	AVStream * st;
+	AVFrame *frame;
+	int got_packet = 0;
+
+	c = pec->_video_st->codec;
+	st = pec->_video_st;
+
+	frame = make_video_frame(&pec->_vctx,praw);
+	
+	if (!frame)
+	{
+		return -1;
+	}
+	if (pec->_ctx->oformat->flags & AVFMT_RAWPICTURE) {
+		/* a hack to avoid data copy with some raw video muxers */
+		AVPacket pkt;
+		av_init_packet(&pkt);
+
+		if (!frame)
+			return 1;
+
+		pkt.flags |= AV_PKT_FLAG_KEY;
+		pkt.stream_index = st->index;
+		pkt.data = (uint8_t *)frame;
+		pkt.size = sizeof(AVPicture);
+
+		pkt.pts = pkt.dts = frame->pts;
+		av_packet_rescale_ts(&pkt, c->time_base, st->time_base);
+
+		ret = av_interleaved_write_frame(pec->_ctx, &pkt);
+	}
+	else {
+		AVPacket pkt = { 0 };
+		av_init_packet(&pkt);
+
+		/* encode the image */
+		ret = avcodec_encode_video2(c, &pkt, frame, &got_packet);
+		if (ret < 0) {
+			char errmsg[ERROR_BUFFER_SIZE];
+			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
+			ffLog("Error encoding video frame: %s\n", errmsg);
+			return -1;
+		}
+
+		if (got_packet) {
+			ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+		}
+		else {
+			ret = 0;
+		}
+	}
+
+	if (ret < 0) {
+		char errmsg[ERROR_BUFFER_SIZE];
+		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
+		ffLog("Error while writing video frame: %s\n", errmsg);
+		return -1;
+	}
+
+	return (frame || got_packet) ? 0 : 1;
+}
+
+AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
+{
+	AVFrame *frame;
+	int16_t *q;
+	
+	frame = ctx->tmp_frame;
+	q = (int16_t*)frame->data[0];
+
+	if ( frame->nb_samples == praw->samples && frame->channels==praw->channels)
+		memcpy(q, praw->data[0], frame->nb_samples*frame->channels);
+	else
+	{
+		ffLog("get_audio_frame nb_samples!=samples.\n");
+		return NULL;
+	}
+
+	frame->pts = ctx->next_pts;
+	ctx->next_pts += frame->nb_samples;
+
+	return frame;
+}
+
+/*
+* encode one audio frame and send it to the muxer
+* return 1 when encoding is finished, 0 otherwise
+* 出错返回-1
+*/
+static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
+{
+	AVCodecContext *c;
+	AVPacket pkt = { 0 }; // data and size must be 0;
+	AVStream * st;
+	AVFrame *frame;
+	AVCtx * ctx;
+	AVRational avrat;
+	int ret;
+	int got_packet;
+	int dst_nb_samples;
+
+	ctx = &pec->_actx;
+	st = pec->_audio_st;
+	av_init_packet(&pkt);
+	c = st->codec;
+
+	frame = get_audio_frame(&pec->_actx,praw);
+
+	if (!frame)
+		return -1;
+
+	if (frame) {
+		/* convert samples from native format to destination codec format, using the resampler */
+		/* compute destination number of samples */
+		dst_nb_samples = av_rescale_rnd(swr_get_delay(ctx->swr_ctx, c->sample_rate) + frame->nb_samples,
+			c->sample_rate, c->sample_rate, AV_ROUND_UP);
+		//av_assert0(dst_nb_samples == frame->nb_samples);
+
+		/* when we pass a frame to the encoder, it may keep a reference to it
+		* internally;
+		* make sure we do not overwrite it here
+		*/
+		//ret = av_frame_make_writable(ost->frame); //FIXME
+		ret = av_frame_make_writable(frame);
+		if (ret < 0)
+		{
+			return -1;
+		}
+
+		/* convert to destination format */
+		//ret = swr_convert(pec->_audio_swr_ctx,
+		//	ost->frame->data, dst_nb_samples,
+		//	(const uint8_t **)frame->data, frame->nb_samples); //FIXME
+		ret = swr_convert(pec->_actx.swr_ctx,
+			ctx->frame->data, dst_nb_samples,
+			(const uint8_t **)frame->data, frame->nb_samples);
+		if (ret < 0) {
+			ffLog("Error while converting\n");
+			return -1;
+		}
+		//frame = ost->frame; //FIXME
+		frame = ctx->frame;
+		avrat.den = 1;
+		avrat.num = c->sample_rate;
+		//frame->pts = av_rescale_q(ost->samples_count, avrat, c->time_base); //FIXME
+		//ost->samples_count += dst_nb_samples; //FIXME
+
+		//frame->pts = av_rescale_q(ost->samples_count, avrat, c->time_base);
+		//ost->samples_count += dst_nb_samples;
+	}
+
+	ret = avcodec_encode_audio2(c, &pkt, frame, &got_packet);
+	if (ret < 0) {
+		char errmsg[ERROR_BUFFER_SIZE];
+		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
+		ffLog("Error encoding audio frame: %s\n", errmsg);
+		return -1;
+	}
+
+	if (got_packet) {
+		ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+		if (ret < 0) {
+			char errmsg[ERROR_BUFFER_SIZE];
+			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
+			ffLog("Error while writing audio frame: %s\n",
+				errmsg);
+			return -1;
+		}
+	}
+
+	return (frame || got_packet) ? 0 : 1;
+}
+
+/*
+ * 编码写入线程
+ */
 int encode_thread_proc(AVEncodeContext * pec)
 {
+	int ret;
+
 	while (!pec->_stop_thread)
 	{
 		AVRaw * praw = ffPopFrame(pec);
 		/*
 		 * 压缩原生数据并写入到文件中
 		 */
-		ffFreeRaw(praw);
+		if (praw)
+		{
+			if (praw->type == RAW_IMAGE)
+			{
+				ret = write_video_frame(pec, praw);
+				if (ret<0)
+					break;
+			}
+			else if (praw->type == RAW_AUDIO)
+			{
+				ret = write_audio_frame(pec, praw);
+				if (ret < 0)
+					break;
+			}
+			else
+			{
+				ffLog("Unknow raw type.\n");
+				break;
+			}
+			ffFreeRaw(praw);
+		}
 	}
+	pec->_stop_thread = 1;
 	return 0;
 }
 
@@ -436,6 +698,8 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename,
 		ffCloseEncodeContext(pec);
 		return NULL;
 	}
+	pec->isopen = 1;
+
 	av_dump_format(ofmt_ctx, 0, filename, 1);
 
 	/*
@@ -449,6 +713,15 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename,
 	return pec;
 }
 
+static void ffFreeAVCtx(AVCtx *ctx)
+{
+	if (ctx->frame)
+		av_frame_free(&ctx->frame);
+	if (ctx->tmp_frame)
+		av_frame_free(&ctx->tmp_frame);
+	if (ctx->swr_ctx)
+		swr_free(&ctx->swr_ctx);
+}
 /**
 * 关闭编码上下文
 */
@@ -462,44 +735,40 @@ void ffCloseEncodeContext(AVEncodeContext *pec)
 		if (pec->_encode_thread)
 		{
 			pec->_stop_thread = 1;
+			pec->_cond->notify_one();
 			pec->_encode_thread->join();
 		}
 		if (pec->_ctx)
 		{
-			/* Write the trailer, if any. The trailer must be written before you
-			* close the CodecContexts open when you wrote the header; otherwise
-			* av_write_trailer() may try to use memory that was freed on
-			* av_codec_close(). 
-			*/
-			av_write_trailer(pec->_ctx);
-			/*
-			 * 如果有必要关闭文件流
-			 */
-			if (pec->_ctx->oformat && !(pec->_ctx->oformat->flags & AVFMT_NOFILE))
+			if (pec->isopen)
 			{
-				avio_closep(&pec->_ctx->pb);
+				/* Write the trailer, if any. The trailer must be written before you
+				* close the CodecContexts open when you wrote the header; otherwise
+				* av_write_trailer() may try to use memory that was freed on
+				* av_codec_close().
+				*/
+				av_write_trailer(pec->_ctx);
+				/*
+				 * 如果有必要关闭文件流
+				 */
+				if (pec->_ctx->oformat && !(pec->_ctx->oformat->flags & AVFMT_NOFILE))
+				{
+					avio_closep(&pec->_ctx->pb);
+				}
 			}
+			/*
+			* 关闭编码器
+			*/
+			if (pec->_video_st)
+				close_stream(pec->_video_st);
+			if (pec->_audio_st)
+				close_stream(pec->_audio_st);
+
 			avformat_free_context(pec->_ctx);
 		}
-		/*
-		* 关闭编码器
-		*/
-		if (pec->_video_st)
-			close_stream(pec->_video_st);
-		if (pec->_audio_st)
-			close_stream(pec->_audio_st);
-		if (pec->_video_frame)
-			av_frame_free(&pec->_video_frame);
-		if (pec->_video_tmp_frame)
-			av_frame_free(&pec->_video_tmp_frame);
-		if (pec->_audio_frame)
-			av_frame_free(&pec->_audio_frame);
-		if (pec->_audio_tmp_frame)
-			av_frame_free(&pec->_audio_tmp_frame);
-		if (pec->_audio_swr_ctx)
-			swr_free(&pec->_audio_swr_ctx);
-		if (pec->_audio_sws_ctx)
-			swr_free(&pec->_audio_sws_ctx);
+
+		ffFreeAVCtx(&pec->_vctx);
+		ffFreeAVCtx(&pec->_actx);
 
 		free((void*)pec->_fileName);
 		free(pec);
@@ -600,8 +869,14 @@ static int getAVRawSizeKB(AVRaw *praw)
 	return 0;
 }
 
-void ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
+int ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
 {
+	if (pec->_stop_thread)
+	{
+		ffLog("ffAddFrame encode thread already stoped.\n");
+		return -1;
+	}
+
 	pec->_mutex->lock();
 	if (!pec->_head)
 	{
@@ -619,4 +894,17 @@ void ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
 	}
 	pec->_cond->notify_one();
 	pec->_mutex->unlock();
+	return 0;
+}
+
+void ffInit()
+{
+#if CONFIG_AVDEVICE
+	avdevice_register_all();
+#endif
+#if CONFIG_AVFILTER
+	avfilter_register_all();
+#endif
+	av_register_all();
+	avformat_network_init();
 }
