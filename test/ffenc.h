@@ -49,7 +49,8 @@ int read_media_file(const char *filename, const char *outfile);
 #define STREAM_FRAME_RATE 25 /* 25 images/s */
 #define STREAM_PIX_FMT    AV_PIX_FMT_YUV420P /* default pix_fmt */
 #define SCALE_FLAGS SWS_BICUBIC
-#define ALIGN32(x) ((x)+4-(x)%4)
+#define ALIGN32(x) FFALIGN(x,32)
+#define ALIGN16(x) FFALIGN(x,16)
 
 #define NUM_DATA_POINTERS 3
 enum AVRawType
@@ -66,9 +67,24 @@ struct AVRaw
 	int channels;
 	int samples;
 	int format;
+	int ref;
+	int size;
 	AVRawType type;
 	AVRaw *next;
 };
+
+/*
+ * 分配图像和音频数据
+ */
+AVRaw *make_image_raw(AVPixelFormat format,int w,int h);
+AVRaw *make_audio_raw(AVSampleFormat format, int channel, int samples);
+
+/*
+ * raw数据的释放机制使用引用机制
+ * 引用计数<=0将执行真正的释放操作,make出来的raw数据引用计数=0
+ */
+int retain_raw(AVRaw * praw);
+int release_raw(AVRaw * praw);
 
 struct AVCtx
 {
@@ -99,11 +115,14 @@ struct AVEncodeContext
 	AVCtx _actx;
 
 	int has_audio, has_video, encode_audio, encode_video,isopen;
-	int if_empty_break;
+	int _isflush;
 	int _buffer_size; //原生数据缓冲区尺寸在kb
 	int _nb_raws; //原生数据帧个数
-	AVRaw * _head;
-	AVRaw * _tail;
+	AVRaw * _video_head;
+	AVRaw * _video_tail;
+	AVRaw * _audio_head;
+	AVRaw * _audio_tail;
+
 	std::thread * _encode_thread;
 	int _stop_thread;
 	mutex_t *_mutex;
@@ -142,6 +161,11 @@ AVEncodeContext* ffCreateEncodeContext(
 	int w, int h, int frameRate, int videoBitRate, AVCodecID video_codec_id,
 	int sampleRate, int audioBitRate, AVCodecID audio_codec_id,AVDictionary * opt_arg);
 
+/*
+ * 表示所有数据都已经发送完毕
+ */
+void ffFlush(AVEncodeContext *pec);
+
 /**
  * 关闭编码上下文
  */
@@ -165,11 +189,6 @@ AVRaw * ffMakeYUV420PRaw(
  * 创建音频原始数据帧格式为S16
  */
 AVRaw * ffMakeAudioS16Raw(uint8_t * pdata,int chanles,int samples);
-
-/*
- * 释放原生数据
- */
-void ffFreeRaw(AVRaw * praw);
 
 /*
  * 取缓冲大小,单位kb

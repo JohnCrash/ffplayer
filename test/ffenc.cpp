@@ -293,25 +293,86 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 	return 0;
 }
 
+static int getAVRawSizeKB(AVRaw *praw)
+{
+	if (praw)
+	{
+		return praw->size/1024;
+	}
+	/*
+	* 未知的格式，不加入到统计中
+	*/
+	return 0;
+}
+
+static AVRaw * list_pop(AVRaw ** head, AVRaw **tail)
+{
+	AVRaw * praw = NULL;
+	if (*head)
+	{
+		praw = *head;
+		*head = praw->next;
+		if (praw == *tail)
+		{
+			*tail = *head;
+		}
+	}
+	return praw;
+}
+
+void ffFlush(AVEncodeContext *pec)
+{
+	mutex_lock_t lock(*pec->_mutex);
+	pec->_isflush = 1;
+	pec->_cond->notify_one();
+}
+
 static AVRaw * ffPopFrame(AVEncodeContext * pec)
 {
 	mutex_lock_t lock(*pec->_mutex);
 	AVRaw * praw = NULL;
-	/*
-	 * 如果队列空就等待，当处于等待状态时_mutex被临时解锁
-	 */
-	if (!pec->_head)
+
+	if (pec->encode_audio && pec->encode_video)
 	{
-		pec->_cond->wait(lock);
-	}
-	if (pec->_head)
-	{
-		praw = pec->_head;
-		pec->_head = praw->next;
-		if (praw == pec->_tail)
+		/*
+		 * 音频和视频的数据要交替写入到流文件
+		 */
+		if (av_compare_ts(pec->_actx.next_pts, pec->_audio_st->codec->time_base,
+			pec->_vctx.next_pts, pec->_video_st->codec->time_base) >= 0)
 		{
-			pec->_tail = pec->_head;
+			/*
+			 * 这里取一个视频帧，如果没有视频帧就等在这里。直到有一个视频帧到来
+			 * 或者通过isflush获知已经没有跟多数据了。如果在while循环结束还是没有数据
+			 * list_pop将返回一个NULL指针，进而是压缩线程终止。
+			 */
+			while (!pec->_video_head && !pec->_isflush)
+				pec->_cond->wait(lock);
+			praw = list_pop(&pec->_video_head, &pec->_video_tail);
 		}
+		else
+		{
+			while (!pec->_audio_head && !pec->_isflush)
+				pec->_cond->wait(lock);
+			praw = list_pop(&pec->_audio_head, &pec->_audio_tail);
+		}
+	}
+	else if (pec->encode_video)
+	{
+		if (!pec->_video_head)
+			pec->_cond->wait(lock);
+		praw = list_pop(&pec->_video_head, &pec->_video_tail);
+	}
+	else if (pec->encode_audio)
+	{
+		if (!pec->_audio_head)
+			pec->_cond->wait(lock);
+		praw = list_pop(&pec->_audio_head, &pec->_audio_tail);
+	}
+
+	if (praw)
+	{
+		pec->_nb_raws--;
+		pec->_buffer_size -= getAVRawSizeKB(praw);
 	}
 	return praw;
 }
@@ -374,9 +435,12 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 				return NULL;
 			}
 		}
+
 		sws_scale(ctx->sws_ctx,
 			(const uint8_t * const *)praw->data, praw->linesize,
 			0, c->height,frame->data, frame->linesize);
+
+		frame->pts = ctx->next_pts++;
 		return frame;
 	}
 }
@@ -470,8 +534,8 @@ AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 	int ret, dst_nb_samples;
 
 	c = ctx->st->codec;
-	q = (int16_t*)frame->data[0];
 	frame = ctx->frame;
+	q = (int16_t*)frame->data[0];
 
 	if (c->sample_fmt == praw->format)
 	{
@@ -491,6 +555,7 @@ AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 			ffLog("get_audio_frame assert dst_nb_samples == frame->nb_samples\n");
 			return NULL;
 		}
+		
 		/* when we pass a frame to the encoder, it may keep a reference to it
 		* internally;
 		* make sure we do not overwrite it here
@@ -511,7 +576,6 @@ AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 		}
 	}
 	
-
 	frame->pts = ctx->next_pts;
 	ctx->next_pts += frame->nb_samples;
 
@@ -533,7 +597,6 @@ static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
 	AVRational avrat;
 	int ret;
 	int got_packet;
-	int dst_nb_samples;
 
 	ctx = &pec->_actx;
 	st = pec->_audio_st;
@@ -548,11 +611,8 @@ static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
 	if (frame) {
 		avrat.den = c->sample_rate;
 		avrat.num = 1;
-		//frame->pts = av_rescale_q(ost->samples_count, avrat, c->time_base); //FIXME
-		//ost->samples_count += dst_nb_samples; //FIXME
-
 		frame->pts = av_rescale_q(ctx->samples_count, avrat, c->time_base);
-		ctx->samples_count += dst_nb_samples;
+		ctx->samples_count += frame->nb_samples;
 	}
 
 	ret = avcodec_encode_audio2(c, &pkt, frame, &got_packet);
@@ -617,16 +677,16 @@ int encode_thread_proc(AVEncodeContext * pec)
 				ffLog("Unknow raw type.\n");
 				break;
 			}
-			ffFreeRaw(praw);
+			release_raw(praw);
 		}
-		/*
-		 * 如果队列空就立刻退出压缩循环
-		 */
-		if (pec->if_empty_break)
+		else
 		{
-			if (!pec->_head)
-				break;
+			/*
+			 * 如果返回NULL表示已经没有数据了。
+			 */
+			break;
 		}
+		printf("buffer : %d, %.2f mb\n",pec->_nb_raws,pec->_buffer_size/1024.0);
 	}
 	pec->_stop_thread = 1;
 	printf("write total frame : %d \n",total_frame);
@@ -764,8 +824,6 @@ void ffCloseEncodeContext(AVEncodeContext *pec)
 		 */
 		if (pec->_encode_thread)
 		{
-			//pec->_stop_thread = 1;
-			pec->if_empty_break = 1;
 			pec->_cond->notify_one();
 			pec->_encode_thread->join();
 			delete pec->_mutex;
@@ -851,19 +909,6 @@ AVRaw * ffMakeAudioS16Raw(uint8_t * pdata, int chanles, int samples)
 	return praw;
 }
 
-void ffFreeRaw(AVRaw * praw)
-{
-	if (praw)
-	{
-		/*
-		 * 这里假设data里存储的指针是通过malloc分配的整块内存，并且praw->data[0]是头。
-		 */
-		if (praw->data[0])
-			free(praw->data[0]);
-		free(praw);
-	}
-}
-
 int ffGetBufferSizeKB(AVEncodeContext *pec)
 {
 	return pec->_buffer_size;
@@ -874,33 +919,18 @@ int ffGetBufferSize(AVEncodeContext *pec)
 	return pec->_nb_raws;
 }
 
-static int getAVRawSizeKB(AVRaw *praw)
+static void list_push(AVRaw ** head, AVRaw ** tail,AVRaw *praw)
 {
-	if (praw->type == RAW_IMAGE)
+	if (!*head)
 	{
-		if (praw->format == AV_PIX_FMT_YUV420P)
-		{
-			/*
-			 * 图像如果是YUV420P,每个点占用12bpp
-			 */
-			return (int)(praw->width*praw->height * 12.0 / (8.0 * 1024));
-		}
-		else if (praw->format == AV_PIX_FMT_RGB24)
-		{
-			return (int)(praw->width*praw->height * 24.0 / (8.0 * 1024));
-		}
+		*head = praw;
+		*tail = praw;
 	}
 	else
 	{
-		if (praw->format == AV_SAMPLE_FMT_S16)
-		{
-			return (int)(praw->channels*praw->samples / 1024.0);
-		}
+		(*tail)->next = praw;
+		*tail = praw;
 	}
-	/*
-	 * 未知的格式，不加入到统计中
-	 */
-	return 0;
 }
 
 int ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
@@ -911,23 +941,25 @@ int ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
 		return -1;
 	}
 
-	pec->_mutex->lock();
-	if (!pec->_head)
+	mutex_lock_t lk(*pec->_mutex);
+
+	if(praw->type==RAW_IMAGE)
 	{
-		pec->_head = praw;
-		pec->_tail = praw;
-		pec->_nb_raws=1;
-		pec->_buffer_size = getAVRawSizeKB(praw);
-	}
-	else
-	{
-		pec->_tail->next = praw;
-		pec->_tail = praw;
+		list_push(&pec->_video_head, &pec->_video_tail,praw);
 		pec->_nb_raws++;
 		pec->_buffer_size += getAVRawSizeKB(praw);
+		pec->_cond->notify_one();
 	}
-	pec->_cond->notify_one();
-	pec->_mutex->unlock();
+	else if (praw->type == RAW_AUDIO)
+	{
+		list_push(&pec->_audio_head, &pec->_audio_tail,praw);
+		pec->_nb_raws++;
+		pec->_buffer_size += getAVRawSizeKB(praw);
+		pec->_cond->notify_one();
+	}
+	else
+		ffLog("ffAddFrame unknow type of AVRaw\n"); 
+
 	return 0;
 }
 
@@ -941,4 +973,148 @@ void ffInit()
 #endif
 	av_register_all();
 	avformat_network_init();
+}
+
+static void ffFreeRaw(AVRaw * praw)
+{
+	if (praw)
+	{
+		/*
+		* 这里假设data里存储的指针是通过malloc分配的整块内存，并且praw->data[0]是头。
+		*/
+		if (praw->data[0])
+			free(praw->data[0]);
+		free(praw);
+	}
+}
+
+/*
+* 分配图像和音频数据
+*/
+AVRaw *make_image_raw(AVPixelFormat format, int w, int h)
+{
+	AVRaw * praw = (AVRaw*)malloc(sizeof(AVRaw));
+
+	while (praw)
+	{
+		int size;
+		memset(praw, 0, sizeof(AVRaw));
+		praw->type = RAW_IMAGE;
+		praw->format = format;
+		praw->width = w;
+		praw->height = h;
+		if (format == AV_PIX_FMT_RGB24)
+		{
+			praw->linesize[0] = ALIGN32(3 * w);
+			size = praw->linesize[0] * h;
+			praw->size = size;
+			praw->data[0] = (uint8_t*)malloc(size);
+			if (!praw->data[0])
+			{
+				ffLog("make_image_raw out of memory.\n");
+				break;
+			}
+		}
+		else if (format == AV_PIX_FMT_YUV420P)
+		{
+			praw->linesize[0] = ALIGN32(w);
+			praw->linesize[1] = ALIGN32((int)(w/2));
+			praw->linesize[2] = ALIGN32((int)(w/2));
+			size = praw->linesize[0] * (h + 2*ALIGN32(int)(h / 2));
+			praw->size = size;
+			praw->data[0] = (uint8_t*)malloc(size);
+			if (!praw->data[0])
+			{
+				ffLog("make_image_raw out of memory.\n");
+				break;
+			}
+			praw->data[1] = praw->data[0] + praw->linesize[0] * ALIGN32(int)(h/2);
+			praw->data[2] = praw->data[1] + praw->linesize[1] * ALIGN32(int)(h / 2);
+		}
+		else
+		{
+			ffLog("make_image_raw does support pixel format.\n");
+			break;
+		}
+		return praw;
+	}
+
+	/*
+	 * 清理代码
+	 */
+	if (praw)
+	{
+		ffFreeRaw(praw);
+	}
+	else
+	{
+		ffLog("make_image_raw out of memory.\n");
+	}
+	praw = NULL;
+	return praw;
+}
+
+AVRaw *make_audio_raw(AVSampleFormat format, int channel, int samples)
+{
+	AVRaw * praw = (AVRaw*)malloc(sizeof(AVRaw));
+	while(praw)
+	{
+		memset(praw, 0, sizeof(AVRaw));
+		praw->type = RAW_AUDIO;
+		praw->format = format;
+		praw->channels = channel;
+		praw->samples = samples;
+		if (format == AV_SAMPLE_FMT_S16)
+		{
+			int size = 2*channel*samples;
+			praw->size = size;
+			praw->data[0] = (uint8_t *)malloc(size);
+			if (!praw->data[0])
+			{
+				ffLog("make_audio_raw out of memory.\n");
+				break;
+			}
+		}
+		else
+		{
+			ffLog("make_image_raw does support sample format.\n");
+			break;
+		}
+
+		return praw;
+	}
+
+	/*
+	* 清理代码
+	*/
+	if (praw)
+	{
+		ffFreeRaw(praw);
+	}
+	else
+	{
+		ffLog("make_audio_raw out of memory.\n");
+	}
+	return praw;
+}
+
+/*
+* raw数据的释放机制使用引用机制
+* 引用计数<=0将执行真正的释放操作,make出来的raw数据引用计数=0
+*/
+int retain_raw(AVRaw * praw)
+{
+	praw->ref++;
+	return praw->ref;
+}
+
+int release_raw(AVRaw * praw)
+{
+	if (praw->ref <= 0)
+	{
+		ffFreeRaw(praw);
+		return 0;
+	}
+	praw->ref--;
+	return praw->ref;
 }
