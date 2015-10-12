@@ -217,6 +217,7 @@ int read_media_file(const char *filename, const char *outfile)
 	}
 	av_dump_format(ofmt_ctx, 0, outfile, 1);
 	int total_size = 0;
+	int total_frame = 0;
 	for (;;){
 		ret = av_read_frame(ic, pkt);
 
@@ -228,6 +229,7 @@ int read_media_file(const char *filename, const char *outfile)
 				break;
 		}
 		total_size += pkt->size;
+		total_frame++;
 		AVStream * st = ic->streams[pkt->stream_index];
 		printf("[%d] size=%d dts=%llu pts=%llu flags=%X dur=%d time=%.2fs\n",
 			pkt->stream_index, pkt->size, pkt->dts, pkt->pts, pkt->flags, pkt->duration,
@@ -251,7 +253,7 @@ int read_media_file(const char *filename, const char *outfile)
 		}
 		av_free_packet(pkt);
 	}
-	printf("total size : %d bytes\n", total_size);
+	printf("total size : %d bytes\ntotal frame : %d\n", total_size,total_frame);
 	avformat_close_input(&ic);
 
 	av_write_trailer(ofmt_ctx);

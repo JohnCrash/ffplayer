@@ -21,8 +21,10 @@ void ffLog(const char * fmt,...)
 	va_start(args, fmt);
 	vsnprintf(buf, ERROR_BUFFER_SIZE - 3, fmt, args);
 	va_end(args);
-	if(_gLogFunc)
+	if (_gLogFunc)
 		_gLogFunc(buf);
+	else
+		printf("%s", buf);
 }
 
 /*
@@ -125,7 +127,6 @@ static void close_stream(AVStream *st)
 	avcodec_close(st->codec);
 	/*
 		av_frame_free(&ost->frame);
-		av_frame_free(&ost->tmp_frame);
 		sws_freeContext(ost->sws_ctx);
 		swr_free(&ost->swr_ctx);
 	*/
@@ -183,6 +184,7 @@ static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,AVDictionar
 		return -1;
 	}
 
+	pec->_vctx.st = pec->_video_st;
 	/* allocate and init a re-usable frame */
 	pec->_vctx.frame = alloc_picture(c->pix_fmt, c->width, c->height);
 	if (!pec->_vctx.frame) {
@@ -190,17 +192,6 @@ static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,AVDictionar
 		return -1;
 	}
 
-	/* If the output format is not YUV420P, then a temporary YUV420P
-	* picture is needed too. It is then converted to the required
-	* output format. */
-	pec->_vctx.tmp_frame = NULL;
-	if (c->pix_fmt != AV_PIX_FMT_YUV420P) {
-		pec->_vctx.tmp_frame = alloc_picture(AV_PIX_FMT_YUV420P, c->width, c->height);
-		if (!pec->_vctx.tmp_frame) {
-			ffLog("Could not allocate temporary picture\n");
-			return -1;
-		}
-	}
 	return 0;
 }
 
@@ -271,13 +262,12 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 	else
 		nb_samples = c->frame_size;
 
+	pec->_actx.st = pec->_audio_st;
+
 	pec->_actx.frame = alloc_audio_frame(c->sample_fmt, c->channel_layout,
 		c->sample_rate, nb_samples);
-	pec->_actx.tmp_frame = alloc_audio_frame(AV_SAMPLE_FMT_S16, c->channel_layout,
-		c->sample_rate, nb_samples);
+
 	if (!pec->_actx.frame)
-		return -1;
-	if (!pec->_actx.tmp_frame)
 		return -1;
 
 	/* create resampler context */
@@ -305,7 +295,7 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 
 static AVRaw * ffPopFrame(AVEncodeContext * pec)
 {
-	std::unique_lock<std::mutex> lock(*pec->_mutex);
+	mutex_lock_t lock(*pec->_mutex);
 	AVRaw * praw = NULL;
 	/*
 	 * 如果队列空就等待，当处于等待状态时_mutex被临时解锁
@@ -328,10 +318,15 @@ static AVRaw * ffPopFrame(AVEncodeContext * pec)
 
 AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 {
-	if (praw->format == AV_PIX_FMT_YUV420P)
-	{
-		AVFrame * frame = ctx->frame;
+	AVCodecContext *c = ctx->st->codec;
+	AVFrame * frame = ctx->frame;
 
+	if (praw->format==c->pix_fmt && praw->format==AV_PIX_FMT_YUV420P)
+	{
+		/*
+		 * 如果格式相同可以进去简单的拷贝
+		 * FIXME: 如果简单的使用praw中的指针传递给frame，压缩完成在恢复可以节省copy操作
+		 */
 		/* when we pass a frame to the encoder, it may keep a reference to it
 		* internally;
 		* make sure we do not overwrite it here
@@ -364,10 +359,26 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 	}
 	else
 	{
-		//FIXME ! 格式转换
-		ffLog("Does not support format.\n");
+		/*
+		 * 初始化格式转换上下文
+		 */
+		if (!ctx->sws_ctx)
+		{
+			ctx->sws_ctx = sws_getContext(c->width, c->height,
+				(AVPixelFormat)praw->format,
+				c->width, c->height,
+				c->pix_fmt,
+				SCALE_FLAGS, NULL, NULL, NULL);
+			if (!ctx->sws_ctx) {
+				ffLog("Could not initialize the conversion context\n");
+				return NULL;
+			}
+		}
+		sws_scale(ctx->sws_ctx,
+			(const uint8_t * const *)praw->data, praw->linesize,
+			0, c->height,frame->data, frame->linesize);
+		return frame;
 	}
-	return NULL;
 }
 
 static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt)
@@ -455,17 +466,51 @@ AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 {
 	AVFrame *frame;
 	int16_t *q;
-	
-	frame = ctx->tmp_frame;
-	q = (int16_t*)frame->data[0];
+	AVCodecContext * c;
+	int ret, dst_nb_samples;
 
-	if ( frame->nb_samples == praw->samples && frame->channels==praw->channels)
+	c = ctx->st->codec;
+	q = (int16_t*)frame->data[0];
+	frame = ctx->frame;
+
+	if (c->sample_fmt == praw->format)
+	{
+		/*
+		 * 采样格式相同直接进行复制就可以了
+		 */
 		memcpy(q, praw->data[0], frame->nb_samples*frame->channels);
+	}
 	else
 	{
-		ffLog("get_audio_frame nb_samples!=samples.\n");
-		return NULL;
+		/* convert samples from native format to destination codec format, using the resampler */
+		/* compute destination number of samples */
+		dst_nb_samples = av_rescale_rnd(swr_get_delay(ctx->swr_ctx, c->sample_rate) + frame->nb_samples,
+			c->sample_rate, c->sample_rate, AV_ROUND_UP);
+		if (dst_nb_samples != frame->nb_samples)
+		{
+			ffLog("get_audio_frame assert dst_nb_samples == frame->nb_samples\n");
+			return NULL;
+		}
+		/* when we pass a frame to the encoder, it may keep a reference to it
+		* internally;
+		* make sure we do not overwrite it here
+		*/
+		ret = av_frame_make_writable(ctx->frame);
+		if (ret < 0)
+		{
+			ffLog("get_audio_frame av_frame_make_writable return <0\n");
+			return NULL;
+		}
+		/* convert to destination format */
+		ret = swr_convert(ctx->swr_ctx,
+			frame->data, dst_nb_samples,
+			(const uint8_t**)praw->data, praw->samples);
+		if (ret < 0) {
+			ffLog("get_audio_frame error while converting\n");
+			return NULL;
+		}
 	}
+	
 
 	frame->pts = ctx->next_pts;
 	ctx->next_pts += frame->nb_samples;
@@ -501,43 +546,13 @@ static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
 		return -1;
 
 	if (frame) {
-		/* convert samples from native format to destination codec format, using the resampler */
-		/* compute destination number of samples */
-		dst_nb_samples = av_rescale_rnd(swr_get_delay(ctx->swr_ctx, c->sample_rate) + frame->nb_samples,
-			c->sample_rate, c->sample_rate, AV_ROUND_UP);
-		//av_assert0(dst_nb_samples == frame->nb_samples);
-
-		/* when we pass a frame to the encoder, it may keep a reference to it
-		* internally;
-		* make sure we do not overwrite it here
-		*/
-		//ret = av_frame_make_writable(ost->frame); //FIXME
-		ret = av_frame_make_writable(frame);
-		if (ret < 0)
-		{
-			return -1;
-		}
-
-		/* convert to destination format */
-		//ret = swr_convert(pec->_audio_swr_ctx,
-		//	ost->frame->data, dst_nb_samples,
-		//	(const uint8_t **)frame->data, frame->nb_samples); //FIXME
-		ret = swr_convert(pec->_actx.swr_ctx,
-			ctx->frame->data, dst_nb_samples,
-			(const uint8_t **)frame->data, frame->nb_samples);
-		if (ret < 0) {
-			ffLog("Error while converting\n");
-			return -1;
-		}
-		//frame = ost->frame; //FIXME
-		frame = ctx->frame;
-		avrat.den = 1;
-		avrat.num = c->sample_rate;
+		avrat.den = c->sample_rate;
+		avrat.num = 1;
 		//frame->pts = av_rescale_q(ost->samples_count, avrat, c->time_base); //FIXME
 		//ost->samples_count += dst_nb_samples; //FIXME
 
-		//frame->pts = av_rescale_q(ost->samples_count, avrat, c->time_base);
-		//ost->samples_count += dst_nb_samples;
+		frame->pts = av_rescale_q(ctx->samples_count, avrat, c->time_base);
+		ctx->samples_count += dst_nb_samples;
 	}
 
 	ret = avcodec_encode_audio2(c, &pkt, frame, &got_packet);
@@ -568,6 +583,7 @@ static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
 int encode_thread_proc(AVEncodeContext * pec)
 {
 	int ret;
+	int total_frame = 0;
 
 	while (!pec->_stop_thread)
 	{
@@ -575,19 +591,26 @@ int encode_thread_proc(AVEncodeContext * pec)
 		/*
 		 * 压缩原生数据并写入到文件中
 		 */
+		total_frame++;
 		if (praw)
 		{
 			if (praw->type == RAW_IMAGE)
 			{
-				ret = write_video_frame(pec, praw);
-				if (ret<0)
-					break;
+				if (pec->encode_video)
+				{
+					ret = write_video_frame(pec, praw);
+					if (ret < 0)
+						break;
+				}
 			}
 			else if (praw->type == RAW_AUDIO)
 			{
-				ret = write_audio_frame(pec, praw);
-				if (ret < 0)
-					break;
+				if (pec->encode_audio)
+				{
+					ret = write_audio_frame(pec, praw);
+					if (ret < 0)
+						break;
+				}
 			}
 			else
 			{
@@ -596,8 +619,17 @@ int encode_thread_proc(AVEncodeContext * pec)
 			}
 			ffFreeRaw(praw);
 		}
+		/*
+		 * 如果队列空就立刻退出压缩循环
+		 */
+		if (pec->if_empty_break)
+		{
+			if (!pec->_head)
+				break;
+		}
 	}
 	pec->_stop_thread = 1;
+	printf("write total frame : %d \n",total_frame);
 	return 0;
 }
 
@@ -704,11 +736,9 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename,
 
 	/*
 	 * 启动压缩压缩线程
-	 * FIXME!
-	 *	  应该尝试分配多个线程并行压缩以榨取多处理器的全部性能。
 	 */
-	pec->_mutex = new std::mutex();
-	pec->_cond = new std::condition_variable();
+	pec->_mutex = new mutex_t();
+	pec->_cond = new condition_t();
 	pec->_encode_thread = new std::thread(encode_thread_proc,pec);
 	return pec;
 }
@@ -717,10 +747,10 @@ static void ffFreeAVCtx(AVCtx *ctx)
 {
 	if (ctx->frame)
 		av_frame_free(&ctx->frame);
-	if (ctx->tmp_frame)
-		av_frame_free(&ctx->tmp_frame);
 	if (ctx->swr_ctx)
 		swr_free(&ctx->swr_ctx);
+	if (ctx->sws_ctx)
+		sws_freeContext(ctx->sws_ctx);
 }
 /**
 * 关闭编码上下文
@@ -734,9 +764,13 @@ void ffCloseEncodeContext(AVEncodeContext *pec)
 		 */
 		if (pec->_encode_thread)
 		{
-			pec->_stop_thread = 1;
+			//pec->_stop_thread = 1;
+			pec->if_empty_break = 1;
 			pec->_cond->notify_one();
 			pec->_encode_thread->join();
+			delete pec->_mutex;
+			delete pec->_cond;
+			delete pec->_encode_thread;
 		}
 		if (pec->_ctx)
 		{

@@ -34,6 +34,8 @@ extern "C"
 	#include "libavcodec/mathops.h"
 	#include "libavformat/os_support.h"
 
+	#include "libswscale/swscale.h"
+
 	# include "libavfilter/avfilter.h"
 	# include "libavfilter/buffersrc.h"
 	# include "libavfilter/buffersink.h"
@@ -46,6 +48,8 @@ int read_media_file(const char *filename, const char *outfile);
 #define STREAM_DURATION   10.0
 #define STREAM_FRAME_RATE 25 /* 25 images/s */
 #define STREAM_PIX_FMT    AV_PIX_FMT_YUV420P /* default pix_fmt */
+#define SCALE_FLAGS SWS_BICUBIC
+#define ALIGN32(x) ((x)+4-(x)%4)
 
 #define NUM_DATA_POINTERS 3
 enum AVRawType
@@ -68,14 +72,19 @@ struct AVRaw
 
 struct AVCtx
 {
+	AVStream * st;
 	AVFrame * frame;
-	AVFrame * tmp_frame;
 
 	int64_t next_pts;
 	int samples_count;
 
 	SwrContext *swr_ctx;
+	SwsContext *sws_ctx;
 };
+
+typedef std::mutex mutex_t;
+typedef std::condition_variable condition_t;
+typedef std::unique_lock<std::mutex> mutex_lock_t;
 
 struct AVEncodeContext
 {
@@ -90,14 +99,15 @@ struct AVEncodeContext
 	AVCtx _actx;
 
 	int has_audio, has_video, encode_audio, encode_video,isopen;
+	int if_empty_break;
 	int _buffer_size; //原生数据缓冲区尺寸在kb
 	int _nb_raws; //原生数据帧个数
 	AVRaw * _head;
 	AVRaw * _tail;
 	std::thread * _encode_thread;
 	int _stop_thread;
-	std::mutex *_mutex;
-	std::condition_variable *_cond;
+	mutex_t *_mutex;
+	condition_t *_cond;
 };
 
 typedef void (*tLogFunc)(char *s);
