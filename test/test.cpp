@@ -42,7 +42,7 @@ double tincr3 = tincr2 / 10000;
 
 static AVRaw * make_audio_frame(AVEncodeContext* pec)
 {
-	AVRaw * praw = make_audio_raw(AV_SAMPLE_FMT_S16, pec->_actx.frame->channels, pec->_actx.frame->nb_samples);
+	AVRaw * praw = make_audio_raw(AV_SAMPLE_FMT_S16, ffGetAudioChannels(pec), ffGetAudioSamples(pec));
 
 	if (praw)
 	{

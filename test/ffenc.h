@@ -162,6 +162,13 @@ AVEncodeContext* ffCreateEncodeContext(
 	int sampleRate, int audioBitRate, AVCodecID audio_codec_id,AVDictionary * opt_arg);
 
 /*
+ * 返回音频每个帧的采样数量,和通道数
+ */
+int ffGetAudioSamples(AVEncodeContext *pec);
+
+int ffGetAudioChannels(AVEncodeContext *pec);
+
+/*
  * 表示所有数据都已经发送完毕
  */
 void ffFlush(AVEncodeContext *pec);
@@ -175,20 +182,6 @@ void ffCloseEncodeContext( AVEncodeContext *pec);
  * 加入音频帧或者视频帧
  */
 int ffAddFrame(AVEncodeContext *pec,AVRaw *praw);
-
-/*
- * 创建视频原始数据帧格式为YUV420P
- * pdata必须是一个以pdata[0]起始的通过malloc分配的整块空间。
- */
-AVRaw * ffMakeYUV420PRaw(
-	uint8_t * pdata[NUM_DATA_POINTERS],
-	int linesize[NUM_DATA_POINTERS], 
-	int w, int h);
-
-/*
- * 创建音频原始数据帧格式为S16
- */
-AVRaw * ffMakeAudioS16Raw(uint8_t * pdata,int chanles,int samples);
 
 /*
  * 取缓冲大小,单位kb

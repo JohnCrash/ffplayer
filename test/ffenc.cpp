@@ -293,6 +293,44 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 	return 0;
 }
 
+int ffGetAudioSamples(AVEncodeContext *pec)
+{
+	if (pec)
+	{
+		if (pec->_audio_st)
+		{
+			AVCodecContext *c = pec->_audio_st->codec;
+			if (c)
+			{
+				int nb_samples;
+				if (c->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE)
+					nb_samples = 10000;
+				else
+					nb_samples = c->frame_size;
+
+				return nb_samples;
+			}
+		}
+	}
+	return -1;
+}
+
+int ffGetAudioChannels(AVEncodeContext *pec)
+{
+	if (pec)
+	{
+		if (pec->_audio_st)
+		{
+			AVCodecContext *c = pec->_audio_st->codec;
+			if (c)
+			{
+				return c->channels;
+			}
+		}
+	}
+	return -1;
+}
+
 static int getAVRawSizeKB(AVRaw *praw)
 {
 	if (praw)
@@ -865,48 +903,6 @@ void ffCloseEncodeContext(AVEncodeContext *pec)
 		free((void*)pec->_fileName);
 		free(pec);
 	}
-}
-
-AVRaw * ffMakeYUV420PRaw(uint8_t * pdata[NUM_DATA_POINTERS], int linesize[NUM_DATA_POINTERS],int w, int h)
-{
-	AVRaw *praw;
-
-	praw = (AVRaw *)malloc(sizeof(AVRaw));
-	if (!praw)
-	{
-		ffLog("ffMakeYUV420PRaw malloc return 0\n");
-		return NULL;
-	}
-	memset(praw, 0, sizeof(AVRaw));
-	praw->type = RAW_IMAGE;
-	praw->format = AV_PIX_FMT_YUV420P;
-	praw->width = w;
-	praw->height = h;
-	for (int i = 0; i < NUM_DATA_POINTERS; i++)
-	{
-		praw->data[i] = pdata[i];
-		praw->linesize[i] = linesize[i];
-	}
-	return praw;
-}
-
-AVRaw * ffMakeAudioS16Raw(uint8_t * pdata, int chanles, int samples)
-{
-	AVRaw *praw;
-
-	praw = (AVRaw *)malloc(sizeof(AVRaw));
-	if (!praw)
-	{
-		ffLog("ffMakeAudioS16Raw malloc return 0\n");
-		return NULL;
-	}
-	memset(praw, 0, sizeof(AVRaw));
-	praw->type = RAW_AUDIO;
-	praw->format = AV_SAMPLE_FMT_S16;
-	praw->channels = chanles;
-	praw->samples = samples;
-	praw->data[0] = pdata;
-	return praw;
 }
 
 int ffGetBufferSizeKB(AVEncodeContext *pec)
