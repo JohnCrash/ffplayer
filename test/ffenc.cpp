@@ -396,13 +396,13 @@ static AVRaw * ffPopFrame(AVEncodeContext * pec)
 	}
 	else if (pec->encode_video)
 	{
-		if (!pec->_video_head)
+		if (!pec->_video_head&& !pec->_isflush)
 			pec->_cond->wait(lock);
 		praw = list_pop(&pec->_video_head, &pec->_video_tail);
 	}
 	else if (pec->encode_audio)
 	{
-		if (!pec->_audio_head)
+		if (!pec->_audio_head&& !pec->_isflush)
 			pec->_cond->wait(lock);
 		praw = list_pop(&pec->_audio_head, &pec->_audio_tail);
 	}
@@ -420,7 +420,10 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 	AVCodecContext *c = ctx->st->codec;
 	AVFrame * frame = ctx->frame;
 
-	if (praw->format==c->pix_fmt && praw->format==AV_PIX_FMT_YUV420P)
+	/*
+	 * 编码器要求的格式和输入格式相同，这里不需要进行复杂转换。
+	 */
+	if (praw->format==c->pix_fmt)
 	{
 		/*
 		 * 如果格式相同可以进去简单的拷贝
@@ -441,17 +444,7 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 		/*
 		 * 这里做数据复制
 		 */
-		if (frame->linesize[0] == praw->linesize[0])
-		{
-			memcpy(frame->data[0], praw->data[0], frame->linesize[0]*frame->height);
-			memcpy(frame->data[1], praw->data[1], frame->linesize[1] * frame->height / 2);
-			memcpy(frame->data[2], praw->data[2], frame->linesize[2] * frame->height / 2);
-		}
-		else
-		{
-			ffLog("make_video_frame linesize!=.\n");
-			return NULL;
-		}
+		av_image_copy(frame->data, frame->linesize, (const uint8_t **)praw->data, praw->linesize, c->pix_fmt,praw->width,praw->height);
 
 		frame->pts = ctx->next_pts++;
 		return frame;
@@ -567,20 +560,18 @@ static int write_video_frame(AVEncodeContext * pec, AVRaw *praw)
 AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 {
 	AVFrame *frame;
-	int16_t *q;
 	AVCodecContext * c;
 	int ret, dst_nb_samples;
 
 	c = ctx->st->codec;
 	frame = ctx->frame;
-	q = (int16_t*)frame->data[0];
 
-	if (c->sample_fmt == praw->format)
+	if (c->sample_fmt == praw->format && praw->samples==frame->nb_samples && praw->channels==frame->channels)
 	{
 		/*
 		 * 采样格式相同直接进行复制就可以了
 		 */
-		memcpy(q, praw->data[0], frame->nb_samples*frame->channels);
+		av_samples_copy(frame->data, praw->data, 0, 0, praw->samples, praw->channels, c->sample_fmt);
 	}
 	else
 	{
@@ -979,7 +970,7 @@ static void ffFreeRaw(AVRaw * praw)
 		* 这里假设data里存储的指针是通过malloc分配的整块内存，并且praw->data[0]是头。
 		*/
 		if (praw->data[0])
-			free(praw->data[0]);
+			av_free(praw->data[0]);
 		free(praw);
 	}
 }
@@ -999,39 +990,16 @@ AVRaw *make_image_raw(AVPixelFormat format, int w, int h)
 		praw->format = format;
 		praw->width = w;
 		praw->height = h;
-		if (format == AV_PIX_FMT_RGB24)
+
+		int ret = av_image_alloc(praw->data, praw->linesize, w, h, format, 32);
+		if (ret < 0)
 		{
-			praw->linesize[0] = ALIGN32(3 * w);
-			size = praw->linesize[0] * h;
-			praw->size = size;
-			praw->data[0] = (uint8_t*)malloc(size);
-			if (!praw->data[0])
-			{
-				ffLog("make_image_raw out of memory.\n");
-				break;
-			}
-		}
-		else if (format == AV_PIX_FMT_YUV420P)
-		{
-			praw->linesize[0] = ALIGN32(w);
-			praw->linesize[1] = ALIGN32((int)(w/2));
-			praw->linesize[2] = ALIGN32((int)(w/2));
-			size = praw->linesize[0] * (h + 2*ALIGN32(int)(h / 2));
-			praw->size = size;
-			praw->data[0] = (uint8_t*)malloc(size);
-			if (!praw->data[0])
-			{
-				ffLog("make_image_raw out of memory.\n");
-				break;
-			}
-			praw->data[1] = praw->data[0] + praw->linesize[0] * ALIGN32(int)(h/2);
-			praw->data[2] = praw->data[1] + praw->linesize[1] * ALIGN32(int)(h / 2);
-		}
-		else
-		{
-			ffLog("make_image_raw does support pixel format.\n");
+			char errmsg[ERROR_BUFFER_SIZE];
+			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
+			ffLog("make_image_raw av_image_alloc : %s \n",errmsg);
 			break;
 		}
+		praw->size = ret;
 		return praw;
 	}
 
@@ -1060,20 +1028,17 @@ AVRaw *make_audio_raw(AVSampleFormat format, int channel, int samples)
 		praw->format = format;
 		praw->channels = channel;
 		praw->samples = samples;
-		if (format == AV_SAMPLE_FMT_S16)
+
+		int ret = av_samples_alloc(praw->data, praw->linesize, channel, samples, format, 0);
+		if (ret < 0)
 		{
-			int size = 2*channel*samples;
-			praw->size = size;
-			praw->data[0] = (uint8_t *)malloc(size);
-			if (!praw->data[0])
-			{
-				ffLog("make_audio_raw out of memory.\n");
-				break;
-			}
+			praw->size = ret;
 		}
 		else
 		{
-			ffLog("make_image_raw does support sample format.\n");
+			char errmsg[ERROR_BUFFER_SIZE];
+			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
+			ffLog("make_audio_raw av_samples_alloc : %s \n", errmsg);
 			break;
 		}
 
@@ -1091,6 +1056,7 @@ AVRaw *make_audio_raw(AVSampleFormat format, int channel, int samples)
 	{
 		ffLog("make_audio_raw out of memory.\n");
 	}
+	praw = NULL;
 	return praw;
 }
 

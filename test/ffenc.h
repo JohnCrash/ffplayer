@@ -44,6 +44,7 @@ extern "C"
 }
 
 int read_media_file(const char *filename, const char *outfile);
+int read_trancode(const char *filename, const char *outfile);
 
 #define STREAM_DURATION   10.0
 #define STREAM_FRAME_RATE 25 /* 25 images/s */
@@ -52,7 +53,7 @@ int read_media_file(const char *filename, const char *outfile);
 #define ALIGN32(x) FFALIGN(x,32)
 #define ALIGN16(x) FFALIGN(x,16)
 
-#define NUM_DATA_POINTERS 3
+#define NUM_DATA_POINTERS 8
 enum AVRawType
 {
 	RAW_IMAGE,

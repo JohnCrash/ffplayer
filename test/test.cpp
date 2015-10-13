@@ -72,6 +72,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	ffInit();
 
+
 	av_dict_set(&opt, "strict", "-2",0); //aac 编码器是实验性质的需要strict -2参数
 	av_dict_set(&opt, "threads", "4", 0); //可以启用多线程压缩
 
@@ -92,6 +93,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	*/
 //	read_media_file("g:\\test.m4a", "g:\\test_out.m4a");
 
+	/*
 	//视频编码测试
 	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.mp4",
 		w, h, 25, 400000, AV_CODEC_ID_MPEG4,
@@ -134,9 +136,10 @@ int _tmain(int argc, _TCHAR* argv[])
 		ffFlush(pec);
 		ffCloseEncodeContext(pec);
 	}
-
+	
 	read_media_file("g:\\test.mp4", "g:\\test_out.mp4");
-
+	*/
+	read_trancode("g:\\2.mp4", "g:\\test_out.mp4");
 	return 0;
 }
 
