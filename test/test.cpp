@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "ffenc.h"
+#include "cap.h"
 
 static AVRaw * make_video_frame(AVEncodeContext* pec,int linex,int liney,int r,int g,int b)
 {
@@ -76,6 +77,35 @@ int _tmain(int argc, _TCHAR* argv[])
 	av_dict_set(&opt, "strict", "-2",0); //aac 编码器是实验性质的需要strict -2参数
 	av_dict_set(&opt, "threads", "4", 0); //可以启用多线程压缩
 
+	cv::CvCapture * cap = cv::cvCreateCameraCapture_VFW(0);
+	if (cap)
+	{
+		int w = 640;
+		int h = 480;
+		int fps = 18;
+		cap->setProperty(cv::CV_CAP_PROP_FRAME_WIDTH,w);
+		cap->setProperty(cv::CV_CAP_PROP_FRAME_HEIGHT, h);
+		cap->setProperty(cv::CV_CAP_PROP_FPS, fps);
+
+		AVEncodeContext* pec = ffCreateEncodeContext("g:\\cap_test.mp4",
+			w, h, 25, 400000, AV_CODEC_ID_MPEG4,
+			SAMPLE_RATE, 64000, AV_CODEC_ID_NONE, opt);
+		if (pec)
+		{
+			for (int i = 0; i < 60 * fps;  i++)
+			{
+				while (cap->grabFrame())
+					ffAddFrame(pec, cap->retrieveFrame(0));
+			}
+		}
+		ffFlush(pec);
+		ffCloseEncodeContext(pec);
+		delete cap;
+	}
+	else
+	{
+		printf("could not fund camera.\n");
+	}
 	//音频压缩测试
 	/*
 	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.m4a",
@@ -139,7 +169,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	
 	read_media_file("g:\\test.mp4", "g:\\test_out.mp4");
 	*/
-	read_trancode("g:\\2.mp4", "g:\\test_out.mp4");
+
+	//测试从一个文件读取，然后压缩进入另一个文件
+	//read_trancode("g:\\2.mp4", "g:\\test_out.mp4");
 	return 0;
 }
 

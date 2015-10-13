@@ -82,15 +82,19 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="cap.h" />
     <ClInclude Include="ffdec.h" />
     <ClInclude Include="ffenc.h" />
+    <ClInclude Include="ffraw.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="cap_vfw.cpp" />
     <ClCompile Include="dec.cpp" />
     <ClCompile Include="ffdec.cpp" />
     <ClCompile Include="ffenc.cpp" />
+    <ClCompile Include="ffraw.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="test.cpp" />
   </ItemGroup>

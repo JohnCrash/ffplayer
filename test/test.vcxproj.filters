@@ -30,6 +30,12 @@
     <ClInclude Include="ffdec.h">
       <Filter>源文件</Filter>
     </ClInclude>
+    <ClInclude Include="cap.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ffraw.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -45,6 +51,12 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ffdec.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="cap_vfw.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ffraw.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
