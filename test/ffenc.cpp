@@ -1030,7 +1030,7 @@ AVRaw *make_audio_raw(AVSampleFormat format, int channel, int samples)
 		praw->samples = samples;
 
 		int ret = av_samples_alloc(praw->data, praw->linesize, channel, samples, format, 0);
-		if (ret < 0)
+		if (ret > 0)
 		{
 			praw->size = ret;
 		}

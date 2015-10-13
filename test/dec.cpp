@@ -412,19 +412,21 @@ int read_trancode(const char *filename, const char *outfile)
 		}
 	}
 
-	sample_rate = 0;
+	//sample_rate = 0;
 
 	AVDictionary * opt = NULL;
 	av_dict_set(&opt, "strict", "-2", 0); //aac 编码器是实验性质的需要strict -2参数
 	av_dict_set(&opt, "threads", "4", 0); //可以启用多线程压缩
 	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.mp4",
-		w, h, 25, 400000, w == 0 ? AV_CODEC_ID_NONE : AV_CODEC_ID_MPEG4,
+		w, h, 18, 400000, w == 0 ? AV_CODEC_ID_NONE : AV_CODEC_ID_MPEG4,
 		sample_rate, 64000, sample_rate==0? AV_CODEC_ID_NONE: AV_CODEC_ID_AAC, opt);
 
 	av_log_streams(ic);
 
 	int total_size = 0;
 	int total_frame = 0;
+	int channel = ffGetAudioChannels(pec);
+	int nb_samples = ffGetAudioSamples(pec);
 	int got_frame;
 	if (pec){
 		for (;;){
@@ -453,10 +455,10 @@ int read_trancode(const char *filename, const char *outfile)
 				ret = avcodec_decode_audio4(ctx, aframe, &got_frame, pkt);
 				if (got_frame)
 				{
-					AVRaw  *praw = make_audio_raw((AVSampleFormat)aframe->format, ffGetAudioChannels(pec), ffGetAudioSamples(pec));
+					AVRaw  *praw = make_audio_raw((AVSampleFormat)aframe->format,channel , nb_samples);
 					if (praw)
 					{
-						memset(praw->data[0], 0, praw->size);
+						av_samples_copy(praw->data, aframe->data, 0, 0, nb_samples, channel, (AVSampleFormat)aframe->format);
 						ffAddFrame(pec, praw);
 					}
 				}
@@ -468,14 +470,7 @@ int read_trancode(const char *filename, const char *outfile)
 					AVRaw  *praw = make_image_raw((AVPixelFormat)frame->format, w, h);
 					if (praw)
 					{
-						if (praw->format == AV_PIX_FMT_YUV420P)
-						{
-							memcpy(praw->data[0], frame->data[0], frame->linesize[0] * h);
-							memcpy(praw->data[1], frame->data[1], frame->linesize[1] * h/2);
-							memcpy(praw->data[2], frame->data[2], frame->linesize[2] * h/2);
-						}
-						else
-							memset(praw->data[0], 0, praw->size);
+						av_image_copy(praw->data, praw->linesize, (const uint8_t **)frame->data, frame->linesize, (AVPixelFormat)frame->format, w, h);
 						ffAddFrame(pec, praw);
 					}
 				}
