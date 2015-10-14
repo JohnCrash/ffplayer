@@ -36,6 +36,15 @@
     <ClInclude Include="ffraw.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="..\Classes\ff.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Classes\ffdepends.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Classes\SDLImp.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -57,6 +66,39 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ffraw.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLAudio_mm.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDL.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLAudio.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLAudioCVT.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLAudioTypeCVT.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLEvent.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLOverlay.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLSurface.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLThread.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLVideo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Classes\SDLWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

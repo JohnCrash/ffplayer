@@ -5,6 +5,13 @@
 #include "ffenc.h"
 #include "cap.h"
 
+namespace ff
+{
+	int CCLog( char const * fmt,...)
+	{
+		return 1;
+	}
+}
 static AVRaw * make_video_frame(AVEncodeContext* pec,int linex,int liney,int r,int g,int b)
 {
 	AVRaw * praw = make_image_raw(AV_PIX_FMT_RGB24, pec->_width, pec->_height);
@@ -63,6 +70,12 @@ static AVRaw * make_audio_frame(AVEncodeContext* pec)
 	return praw;
 }
 
+#include "SDLImp.h"
+
+static void record_callback(void *pd, uint8_t *stream, int len)
+{
+
+}
 int _tmain(int argc, _TCHAR* argv[])
 {
 	AVDictionary * opt = NULL;
@@ -77,30 +90,72 @@ int _tmain(int argc, _TCHAR* argv[])
 	av_dict_set(&opt, "strict", "-2",0); //aac 编码器是实验性质的需要strict -2参数
 	av_dict_set(&opt, "threads", "4", 0); //可以启用多线程压缩
 
+	ff::AudioSpec audio_cap;
+	audio_cap.format = AUDIO_S16SYS;
+	audio_cap.silence = 0;
+	audio_cap.samples = 1024;
+	audio_cap.channels = 2;
+	audio_cap.freq = SAMPLE_RATE;
+	audio_cap.callback = record_callback;
+	audio_cap.userdata = 0;
+
+//	int ret = ff::OpenAudioDevice(0, 1, &audio_cap, &audio_cap, 1);
+//	if (ret > 0)
+//		ff::PauseAudio(0);
+
 	cv::CvCapture * cap = cv::cvCreateCameraCapture_VFW(0);
+
 	if (cap)
 	{
-		int w = 640;
-		int h = 480;
-		int fps = 18;
+		int w = 720;
+		int h = 540;
+		int fps = 24;
+		int64_t t,dt,dts;
+		int count = 0;
 		cap->setProperty(cv::CV_CAP_PROP_FRAME_WIDTH,w);
 		cap->setProperty(cv::CV_CAP_PROP_FRAME_HEIGHT, h);
 		cap->setProperty(cv::CV_CAP_PROP_FPS, fps);
 
+		w = cap->getProperty(cv::CV_CAP_PROP_FRAME_WIDTH);
+		h = cap->getProperty(cv::CV_CAP_PROP_FRAME_HEIGHT);
+		fps = cap->getProperty(cv::CV_CAP_PROP_FPS);
 		AVEncodeContext* pec = ffCreateEncodeContext("g:\\cap_test.mp4",
-			w, h, 25, 400000, AV_CODEC_ID_MPEG4,
+			w, h, fps, 400000, AV_CODEC_ID_MPEG4,
 			SAMPLE_RATE, 64000, AV_CODEC_ID_NONE, opt);
+
 		if (pec)
 		{
-			for (int i = 0; i < 60 * fps;  i++)
+			t = GetTickCount64();
+			
+			double dps = 1000.0 / fps;
+			for (int i = 0; i < 10 * fps;  i++)
 			{
-				while (cap->grabFrame())
-					ffAddFrame(pec, cap->retrieveFrame(0));
+				DWORD st1, st2, st3;
+				DWORD st0 = GetTickCount();
+				if (cap->grabFrame())
+				{
+					st1 = GetTickCount(); 
+					AVRaw * praw = cap->retrieveFrame(0);
+					st2 = GetTickCount();
+					if (praw)
+						ffAddFrame(pec, praw);
+					st3 = GetTickCount();
+				}
+				printf("grab = %d retrieve = %d,ffAddFrame = %d\n",st1-st0,st2-st1,st3-st2);
+				count = 0;
+				dts = (i+1)*dps;
+				do
+				{
+					dt = GetTickCount64() - t;
+					Sleep(1);
+					count++;
+				} while (dt < dts);
+				printf("%d dt=%d s %I64d\n", count,dt/1000,(dt-dts));
 			}
 		}
+		delete cap;
 		ffFlush(pec);
 		ffCloseEncodeContext(pec);
-		delete cap;
 	}
 	else
 	{

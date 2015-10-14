@@ -23,7 +23,7 @@ namespace cv
 		bmih.biBitCount = (WORD)bpp;
 		bmih.biCompression = compression;
 		bmih.biPlanes = 1;
-
+		bmih.biSizeImage = width * height * bpp/8;
 		return bmih;
 	}
 
@@ -195,6 +195,25 @@ namespace cv
 		return false;
 	}
 
+	/*
+	 * 将图像进行上下翻转
+	 */
+	static void flip_rgb24_raw(AVRaw * praw)
+	{
+		int linesize = praw->linesize[0];
+		uint8_t * tmp = (uint8_t *)malloc(linesize);
+		if (tmp == 0)
+			return;
+		for (int y = 0; y < praw->height / 2; y++)
+		{
+			uint8_t * top = praw->data[0] + y*linesize;
+			uint8_t * bottom = praw->data[0] + (praw->height-y-1)*linesize;
+			memcpy(tmp,top, linesize);
+			memcpy(top, bottom, linesize);
+			memcpy(bottom, tmp, linesize);
+		}
+		free(tmp);
+	}
 
 	AVRaw * CvCaptureCAM_VFW::retrieveFrame(int)
 	{
@@ -213,11 +232,12 @@ namespace cv
 			return 0;
 
 		release_raw(frame);
-		frame = make_image_raw((int)AV_PIX_FMT_RGB24, vfmt0.biWidth, vfmt0.biHeight);
+		frame = make_image_raw((int)AV_PIX_FMT_BGR24, vfmt0.biWidth, vfmt0.biHeight);
 		if (!frame)
 		{
 			return 0;
 		}
+		retain_raw(frame);
 
 		if (vfmt0.biCompression != BI_RGB ||
 			vfmt0.biBitCount != 24)
@@ -240,12 +260,14 @@ namespace cv
 				}
 			}
 
+			memset(frame->data[0], 128, frame->size); 
 			if (!hic || ICDecompress(hic, 0, &vfmt0, hdr->lpData,
 				&vfmt1, frame->data[0]) != ICERR_OK)
 			{
 				closeHIC();
 				return 0;
 			}
+			flip_rgb24_raw(frame);
 		}
 		else
 		{
@@ -254,7 +276,6 @@ namespace cv
 			 */
 			memcpy(frame->data[0], hdr->lpData, frame->linesize[0] * frame->height);
 		}
-
 		return frame;
 	}
 

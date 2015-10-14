@@ -52,7 +52,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..\cocos2d-x\external\ffmpeg\prebuilt\win32;..\..\cocos2d-x\external\ffmpeg\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\cocos2d-x\external\ffmpeg\prebuilt\win32;..\..\cocos2d-x\external\ffmpeg\include;G:\source\ffplay\Classes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -82,6 +82,9 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\Classes\ff.h" />
+    <ClInclude Include="..\Classes\ffdepends.h" />
+    <ClInclude Include="..\Classes\SDLImp.h" />
     <ClInclude Include="cap.h" />
     <ClInclude Include="ffdec.h" />
     <ClInclude Include="ffenc.h" />
@@ -90,6 +93,17 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\Classes\SDL.cpp" />
+    <ClCompile Include="..\Classes\SDLAudio.cpp" />
+    <ClCompile Include="..\Classes\SDLAudioCVT.cpp" />
+    <ClCompile Include="..\Classes\SDLAudioTypeCVT.cpp" />
+    <ClCompile Include="..\Classes\SDLAudio_mm.cpp" />
+    <ClCompile Include="..\Classes\SDLEvent.cpp" />
+    <ClCompile Include="..\Classes\SDLOverlay.cpp" />
+    <ClCompile Include="..\Classes\SDLSurface.cpp" />
+    <ClCompile Include="..\Classes\SDLThread.cpp" />
+    <ClCompile Include="..\Classes\SDLVideo.cpp" />
+    <ClCompile Include="..\Classes\SDLWindow.cpp" />
     <ClCompile Include="cap_vfw.cpp" />
     <ClCompile Include="dec.cpp" />
     <ClCompile Include="ffdec.cpp" />
