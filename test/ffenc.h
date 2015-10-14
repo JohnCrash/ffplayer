@@ -7,15 +7,6 @@
 int read_media_file(const char *filename, const char *outfile);
 int read_trancode(const char *filename, const char *outfile);
 
-#define STREAM_DURATION   10.0
-#define STREAM_FRAME_RATE 25 /* 25 images/s */
-#define STREAM_PIX_FMT    AV_PIX_FMT_YUV420P /* default pix_fmt */
-#define SCALE_FLAGS SWS_BICUBIC
-#define ALIGN32(x) FFALIGN(x,32)
-#define ALIGN16(x) FFALIGN(x,16)
-
-#define ERROR_BUFFER_SIZE 1024
-
 struct AVEncodeContext
 {
 	const char *_fileName;
@@ -42,22 +33,6 @@ struct AVEncodeContext
 	mutex_t *_mutex;
 	condition_t *_cond;
 };
-
-typedef void (*tLogFunc)(char *s);
-/**
- * 设置日志输出函数
- */
-void ffSetLogHandler( tLogFunc logfunc );
-
-/**
- * 日志输出
- */
-void ffLog(const char * fmt, ...);
-
-/*
- * 初始化ff库,注册设备，初始网络。
- */
-void ffInit();
 
 /**
  * 创建编码上下文
