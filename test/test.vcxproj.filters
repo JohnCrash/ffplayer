@@ -27,9 +27,6 @@
     <ClInclude Include="ffenc.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ffdec.h">
-      <Filter>源文件</Filter>
-    </ClInclude>
     <ClInclude Include="cap.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -43,6 +40,15 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="..\Classes\SDLImp.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ffcommon.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ffdec.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="transcode.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -99,6 +105,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="..\Classes\SDLWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="transcode.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

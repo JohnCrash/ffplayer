@@ -86,11 +86,13 @@
     <ClInclude Include="..\Classes\ffdepends.h" />
     <ClInclude Include="..\Classes\SDLImp.h" />
     <ClInclude Include="cap.h" />
+    <ClInclude Include="ffcommon.h" />
     <ClInclude Include="ffdec.h" />
     <ClInclude Include="ffenc.h" />
     <ClInclude Include="ffraw.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="transcode.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Classes\SDL.cpp" />
@@ -111,6 +113,7 @@
     <ClCompile Include="ffraw.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="test.cpp" />
+    <ClCompile Include="transcode.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

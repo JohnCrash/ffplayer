@@ -1,5 +1,6 @@
 #include "ffenc.h"
 
+static char _lastError[ERROR_BUFFER_SIZE];
 /**
 * 设置日志输出函数
 */
@@ -7,6 +8,11 @@ static tLogFunc _gLogFunc = NULL;
 void ffSetLogHandler(tLogFunc logfunc)
 {
 	_gLogFunc = logfunc;
+}
+
+const char * ffLastError()
+{
+	return _lastError;
 }
 
 /**
@@ -130,7 +136,7 @@ static void close_stream(AVStream *st)
 	*/
 }
 
-static AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height)
+AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height)
 {
 	AVFrame *picture;
 	int ret;
@@ -196,7 +202,7 @@ static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,AVDictionar
 /*
  * 分配音频帧
  */
-static AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
+AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
 	uint64_t channel_layout,
 	int sample_rate, int nb_samples)
 {
@@ -341,7 +347,7 @@ static int getAVRawSizeKB(AVRaw *praw)
 	return 0;
 }
 
-static AVRaw * list_pop(AVRaw ** head, AVRaw **tail)
+AVRaw * list_pop_raw(AVRaw ** head, AVRaw **tail)
 {
 	AVRaw * praw = NULL;
 	if (*head)
@@ -379,30 +385,30 @@ static AVRaw * ffPopFrame(AVEncodeContext * pec)
 			/*
 			 * 这里取一个视频帧，如果没有视频帧就等在这里。直到有一个视频帧到来
 			 * 或者通过isflush获知已经没有跟多数据了。如果在while循环结束还是没有数据
-			 * list_pop将返回一个NULL指针，进而是压缩线程终止。
+			 * list_pop_raw将返回一个NULL指针，进而是压缩线程终止。
 			 */
 			while (!pec->_video_head && !pec->_isflush)
 				pec->_cond->wait(lock);
-			praw = list_pop(&pec->_video_head, &pec->_video_tail);
+			praw = list_pop_raw(&pec->_video_head, &pec->_video_tail);
 		}
 		else
 		{
 			while (!pec->_audio_head && !pec->_isflush)
 				pec->_cond->wait(lock);
-			praw = list_pop(&pec->_audio_head, &pec->_audio_tail);
+			praw = list_pop_raw(&pec->_audio_head, &pec->_audio_tail);
 		}
 	}
 	else if (pec->encode_video)
 	{
 		if (!pec->_video_head&& !pec->_isflush)
 			pec->_cond->wait(lock);
-		praw = list_pop(&pec->_video_head, &pec->_video_tail);
+		praw = list_pop_raw(&pec->_video_head, &pec->_video_tail);
 	}
 	else if (pec->encode_audio)
 	{
 		if (!pec->_audio_head&& !pec->_isflush)
 			pec->_cond->wait(lock);
-		praw = list_pop(&pec->_audio_head, &pec->_audio_tail);
+		praw = list_pop_raw(&pec->_audio_head, &pec->_audio_tail);
 	}
 
 	if (praw)
@@ -421,7 +427,7 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 	/*
 	 * 编码器要求的格式和输入格式相同，这里不需要进行复杂转换。
 	 */
-	if (praw->format==c->pix_fmt)
+	if (praw->format==c->pix_fmt && praw->width==c->width&&praw->height==c->height)
 	{
 		/*
 		 * 如果格式相同可以进去简单的拷贝
@@ -454,7 +460,7 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 		 */
 		if (!ctx->sws_ctx)
 		{
-			ctx->sws_ctx = sws_getContext(c->width, c->height,
+			ctx->sws_ctx = sws_getContext(praw->width, praw->height,
 				(AVPixelFormat)praw->format,
 				c->width, c->height,
 				c->pix_fmt,
@@ -467,7 +473,7 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 
 		sws_scale(ctx->sws_ctx,
 			(const uint8_t * const *)praw->data, praw->linesize,
-			0, c->height,frame->data, frame->linesize);
+			0, praw->height,frame->data, frame->linesize);
 
 		frame->pts = ctx->next_pts++;
 		return frame;
@@ -904,7 +910,7 @@ int ffGetBufferSize(AVEncodeContext *pec)
 	return pec->_nb_raws;
 }
 
-static void list_push(AVRaw ** head, AVRaw ** tail,AVRaw *praw)
+void list_push_raw(AVRaw ** head, AVRaw ** tail,AVRaw *praw)
 {
 	if (!*head)
 	{
@@ -930,14 +936,14 @@ int ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
 
 	if(praw->type==RAW_IMAGE)
 	{
-		list_push(&pec->_video_head, &pec->_video_tail,praw);
+		list_push_raw(&pec->_video_head, &pec->_video_tail, praw);
 		pec->_nb_raws++;
 		pec->_buffer_size += getAVRawSizeKB(praw);
 		pec->_cond->notify_one();
 	}
 	else if (praw->type == RAW_AUDIO)
 	{
-		list_push(&pec->_audio_head, &pec->_audio_tail,praw);
+		list_push_raw(&pec->_audio_head, &pec->_audio_tail, praw);
 		pec->_nb_raws++;
 		pec->_buffer_size += getAVRawSizeKB(praw);
 		pec->_cond->notify_one();

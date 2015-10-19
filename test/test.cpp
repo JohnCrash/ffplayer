@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "ffenc.h"
 #include "cap.h"
+#include "transcode.h"
 
 namespace ff
 {
@@ -76,6 +77,13 @@ static void record_callback(void *pd, uint8_t *stream, int len)
 {
 
 }
+
+static void progress(int64_t t, int64_t i)
+{
+	if (t)
+		printf("%.0f%\n", (double)i*100.0 /(double)t);
+}
+
 int _tmain(int argc, _TCHAR* argv[])
 {
 	AVDictionary * opt = NULL;
@@ -86,7 +94,17 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	ffInit();
 
-
+	/*
+	 * 测试转码
+	 */
+	int ret = ffTranscode("g:\\1.mpg", "g:\\transcode_test_1.mp4", 
+		AV_CODEC_ID_MPEG4, 1, 1,1000*1000,
+		AV_CODEC_ID_AAC, 24 * 1000, progress);
+	if (ret<0)
+	{
+		printf("ffTranscode error: %s \n",ffLastError());
+	}
+	/*
 	av_dict_set(&opt, "strict", "-2",0); //aac 编码器是实验性质的需要strict -2参数
 	av_dict_set(&opt, "threads", "4", 0); //可以启用多线程压缩
 
@@ -161,6 +179,10 @@ int _tmain(int argc, _TCHAR* argv[])
 	{
 		printf("could not fund camera.\n");
 	}
+	*/
+
+
+
 	//音频压缩测试
 	/*
 	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.m4a",

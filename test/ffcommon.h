@@ -79,8 +79,19 @@ void ffSetLogHandler(tLogFunc logfunc);
 void ffLog(const char * fmt, ...);
 
 /*
+* 取得最近的错误
+*/
+const char * ffLastError();
+
+/*
 * 初始化ff库,注册设备，初始网络。
 */
 void ffInit();
+
+AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
+	uint64_t channel_layout,
+	int sample_rate, int nb_samples);
+
+AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height);
 
 #endif

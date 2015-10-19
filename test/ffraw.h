@@ -19,6 +19,7 @@ struct AVRaw
 	int format;
 	int ref;
 	int size;
+	int seek_sample;
 	AVRawType type;
 	AVRaw *next;
 };
@@ -36,5 +37,7 @@ AVRaw *make_audio_raw(int format, int channel, int samples);
 int retain_raw(AVRaw * praw);
 int release_raw(AVRaw * praw);
 
+void list_push_raw(AVRaw ** head, AVRaw ** tail, AVRaw *praw);
+AVRaw * list_pop_raw(AVRaw ** head, AVRaw **tail);
 
 #endif
