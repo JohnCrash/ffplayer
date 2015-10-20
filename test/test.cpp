@@ -97,9 +97,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	/*
 	 * ²âÊÔ×ªÂë
 	 */
-	int ret = ffTranscode("g:\\1.mpg", "g:\\transcode_test_1.mp4", 
-		AV_CODEC_ID_MPEG4, 1, 1,1000*1000,
-		AV_CODEC_ID_AAC, 24 * 1000, progress);
+	int ret = ffTranscode("g:\\1.mpg", "g:\\transcode_1_mpg.mp4", 
+		AV_CODEC_ID_MPEG4, 1, 1,2000*1000,
+		AV_CODEC_ID_AAC, 64 * 1000, progress);
 	if (ret<0)
 	{
 		printf("ffTranscode error: %s \n",ffLastError());

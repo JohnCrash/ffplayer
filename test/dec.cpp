@@ -417,8 +417,11 @@ int read_trancode(const char *filename, const char *outfile)
 	AVDictionary * opt = NULL;
 	av_dict_set(&opt, "strict", "-2", 0); //aac 编码器是实验性质的需要strict -2参数
 	av_dict_set(&opt, "threads", "4", 0); //可以启用多线程压缩
+	AVRational rat;
+	rat.num = 18;
+	rat.den = 1;
 	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.mp4",
-		w, h, 18, 100000, w == 0 ? AV_CODEC_ID_NONE : AV_CODEC_ID_MPEG4,
+		w, h, rat, 100000, w == 0 ? AV_CODEC_ID_NONE : AV_CODEC_ID_MPEG4,
 		sample_rate, 64000, sample_rate==0? AV_CODEC_ID_NONE: AV_CODEC_ID_AAC, opt);
 
 	av_log_streams(ic);

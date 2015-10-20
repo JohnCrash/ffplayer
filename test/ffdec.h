@@ -36,7 +36,7 @@ void ffCloseDecodeContext(AVDecodeCtx *pdc);
 /*
  * 取得视频的帧率，宽度，高度
  */
-int ffGetFrameRate(AVDecodeCtx *pdc);
+AVRational ffGetFrameRate(AVDecodeCtx *pdc);
 int ffGetFrameWidth(AVDecodeCtx *pdc);
 int ffGetFrameHeight(AVDecodeCtx *pdc);
 

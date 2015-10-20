@@ -19,6 +19,7 @@ static int ffAlign32(int x)
 static void rebuffer_sample(AVRaw *praw,AVRaw **head,AVRaw **tail,AVSampleFormat fmt,int channel,int samples)
 {
 	AVRaw * pnew;
+	int ds,ss;
 
 	if (praw)
 	{
@@ -27,13 +28,52 @@ static void rebuffer_sample(AVRaw *praw,AVRaw **head,AVRaw **tail,AVSampleFormat
 		{
 			pnew = make_audio_raw(fmt, channel, samples);
 			if (pnew)
-				list_push_raw(head, tail,pnew);
+				list_push_raw(head, tail, pnew);
+			else
+				return;
 		}
 
-		int offset = praw->samples;
-		while (offset > 0)
+		/* 如果最后一个是满的，就需要在分配一个 */
+		if ((*tail)->samples == (*tail)->seek_sample)
 		{
+			pnew = make_audio_raw(fmt, channel, samples);
+			if (pnew)
+				list_push_raw(head, tail, pnew);
+			else
+				return;
+		}
+		else
+		{
+			pnew = *tail;
+		}
 
+		int offset = 0;
+		while (offset < praw->samples)
+		{
+			/* ds目的空间，ss剩余未填充数据 */
+			ds = pnew->samples - pnew->seek_sample;
+			ss = praw->samples - offset;
+			if (ds >= ss)
+			{ 
+				/* 空间足够容纳praw */
+				av_samples_copy(pnew->data, praw->data, pnew->seek_sample, offset, ss, channel, fmt);
+				pnew->seek_sample += ss;
+				return;
+			}
+			else
+			{
+				av_samples_copy(pnew->data, praw->data, pnew->seek_sample, offset, ds, channel, fmt);
+				offset += ds;
+				pnew->seek_sample += ds;
+				if (pnew->seek_sample==pnew->samples)
+				{ /* 如果还有多余的数据 */
+					pnew = make_audio_raw(fmt, channel, samples);
+					if (pnew)
+						list_push_raw(head, tail, pnew);
+					else
+						return;
+				}
+			}
 		}
 	}
 }
@@ -43,7 +83,9 @@ static void rebuffer_sample(AVRaw *praw,AVRaw **head,AVRaw **tail,AVSampleFormat
  */
 static AVRaw * rebuffer_pop_raw(AVRaw **head, AVRaw **tail)
 {
-
+	if (*head && (*head)->seek_sample == (*head)->samples)
+		return list_pop_raw(head, tail);
+	return NULL;
 }
 
 /*
@@ -86,8 +128,8 @@ int ffTranscode(const char *input, const char *output,
 		{
 			audio_id = audio_id == AV_CODEC_COPY ? pdc->_audio_st->codec->codec_id : audio_id;
 		}
-		w = width*ffGetFrameWidth(pdc);
-		h =  height*ffGetFrameHeight(pdc);
+		w = (int)(width*ffGetFrameWidth(pdc));
+		h =  (int)(height*ffGetFrameHeight(pdc));
 		w = ffAlign32(w);
 		h = ffAlign32(h);
 		bitRate = bitRate <= 0 ? 8*1024*1024: bitRate;
@@ -96,6 +138,11 @@ int ffTranscode(const char *input, const char *output,
 		if (pdc->has_video)
 		{
 			total = pdc->_video_st->nb_frames;
+			if (total <= 0 && pdc->_video_st->time_base.den>0)
+			{
+				double sl = (double)(pdc->_video_st->duration*pdc->_video_st->time_base.num)/(double)pdc->_video_st->time_base.den;
+				total = (int64_t)(pdc->_video_st->r_frame_rate.num*sl / (double)pdc->_video_st->r_frame_rate.den);
+			}
 		}
 		else if (pdc->has_audio)
 		{
@@ -115,7 +162,7 @@ int ffTranscode(const char *input, const char *output,
 			AVSampleFormat enc_fmt;
 			int enc_channel;
 			int enc_samples;
-			AVRaw * praw ,* head,* tail;
+			AVRaw * praw ,* head,* tail,*praw2;
 
 			tail = head = NULL;
 			if (pec->has_audio&&pdc->has_audio)
@@ -133,11 +180,25 @@ int ffTranscode(const char *input, const char *output,
 			do
 			{
 				praw = ffReadFrame(pdc);
+				praw2 = praw;
+				bool need_resamples = false;
+				
 				if (praw)
+					need_resamples = (enc_samples&&praw->type == RAW_AUDIO&&praw->samples != enc_samples);
+
+				while (praw2)
 				{
-					if (enc_samples&&praw->type == RAW_AUDIO&&praw->samples != enc_samples)
+					if (need_resamples)
 					{
-						praw = rebuffer_sample(praw, &head, &tail, enc_fmt,enc_channel, enc_samples);
+						if (praw == praw2)
+						{ /* 第一次进来来，将数据重新组织 */
+							rebuffer_sample(praw2, &head, &tail, enc_fmt, enc_channel, enc_samples);
+							/* 需要释放 */
+							release_raw(praw2);
+						}
+						praw2 = rebuffer_pop_raw(&head,&tail);
+						if (!praw2)
+							break;
 					}
 					/*
 					 * 如果压缩队列太多就等待
@@ -145,19 +206,17 @@ int ffTranscode(const char *input, const char *output,
 					while (ffGetBufferSizeKB(pec) > TRANSCODE_MAXBUFFER_SIZE)
 					{
 						/*
-						 * 压缩线程停止工作了,不再等待
+						 * 压缩线程停止工作了或者编码器在等待喂数据就不再等待
 						 */
-						if (pec->_stop_thread)
+						if (pec->_stop_thread||pec->_encode_waiting)
 						{
 							break;
 						}
 						std::this_thread::sleep_for(std::chrono::milliseconds(10));
 					}
-					ret = ffAddFrame(pec, praw);
+					ret = ffAddFrame(pec, praw2);
 					if (ret < 0)
-					{
 						break;
-					}
 					/*
 					 * 进度回调,有视频优先视频
 					 */
@@ -174,6 +233,9 @@ int ffTranscode(const char *input, const char *output,
 								progress(total, i++);
 						}
 					}
+					/* 如果不需要对声音进行重新采样 */
+					if (!need_resamples)
+						break;
 				}
 			} while (praw);
 

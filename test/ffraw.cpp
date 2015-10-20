@@ -117,11 +117,11 @@ int release_raw(AVRaw * praw)
 		if (praw->ref <= 0)
 		{
 			ffFreeRaw(praw);
-			return 0;
+			return -1;
 		}
 		praw->ref--;
 		return praw->ref;
 	}
 	else
-		return 0;
+		return -1;
 }

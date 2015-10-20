@@ -30,6 +30,7 @@ struct AVEncodeContext
 
 	std::thread * _encode_thread;
 	int _stop_thread;
+	int _encode_waiting;
 	mutex_t *_mutex;
 	condition_t *_cond;
 };
@@ -38,7 +39,8 @@ struct AVEncodeContext
  * 创建编码上下文
  * 给出编码的文件名和视频的尺寸(w,h)
  * video_codec_id 要使用的视频编码id
- * frameRate 视频帧率
+ * frameRate 视频帧率，有理数比如num=24000,den=1000,分子24000,分母1000，帧率24
+ * 使用有理数可以避免小数精度误差
  * videoBitRate 视频比特率
  * audio_codec_id 要使用的音频编码id
  * sampleRate 音频采样率
@@ -47,7 +49,7 @@ struct AVEncodeContext
  */
 AVEncodeContext* ffCreateEncodeContext( 
 	const char* filename,
-	int w, int h, int frameRate, int videoBitRate, AVCodecID video_codec_id,
+	int w, int h, AVRational frameRate, int videoBitRate, AVCodecID video_codec_id,
 	int sampleRate, int audioBitRate, AVCodecID audio_codec_id,AVDictionary * opt_arg);
 
 /*

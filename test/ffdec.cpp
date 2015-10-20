@@ -122,7 +122,7 @@ AVDecodeCtx *ffCreateDecodeContext(
 	pdc = (AVDecodeCtx *)malloc(sizeof(AVDecodeCtx));
 	while (pdc)
 	{
-		memset(pdc, 0, sizeof(pdc));
+		memset(pdc, 0, sizeof(AVDecodeCtx));
 		pdc->_fileName = strdup(filename);
 		pdc->_ctx = avformat_alloc_context();
 		if (!pdc->_ctx)
@@ -232,13 +232,16 @@ void ffCloseDecodeContext(AVDecodeCtx *pdc)
 /*
 * 取得视频的帧率，宽度，高度
 */
-int ffGetFrameRate(AVDecodeCtx *pdc)
+AVRational ffGetFrameRate(AVDecodeCtx *pdc)
 {
 	if (pdc && pdc->_video_st&&pdc->_video_st->codec)
 	{
-		return (int)(pdc->_video_st->r_frame_rate.num / pdc->_video_st->r_frame_rate.den);
+		return pdc->_video_st->r_frame_rate;
 	}
-	return -1;
+	AVRational ret;
+	ret.den = 1;
+	ret.num = 1;
+	return ret;
 }
 
 int ffGetFrameWidth(AVDecodeCtx *pdc)
@@ -288,6 +291,7 @@ AVRaw * ffReadFrame(AVDecodeCtx *pdc)
 			{
 				AVRaw * praw = make_image_raw(ctx->pix_fmt,ctx->width,ctx->height);
 				av_image_copy(praw->data, praw->linesize, (const uint8_t **)frame->data, frame->linesize, ctx->pix_fmt, ctx->width, ctx->height);
+				av_free_packet(&pkt);
 				return praw;
 			}
 		}
@@ -300,6 +304,7 @@ AVRaw * ffReadFrame(AVDecodeCtx *pdc)
 			{
 				AVRaw * praw = make_audio_raw(ctx->sample_fmt, frame->channels, frame->nb_samples);
 				av_samples_copy(praw->data, frame->data, 0, 0, frame->nb_samples, frame->channels, ctx->sample_fmt);
+				av_free_packet(&pkt);
 				return praw;
 			}
 		}

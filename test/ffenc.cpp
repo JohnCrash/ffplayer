@@ -35,7 +35,7 @@ void ffLog(const char * fmt,...)
  * 向AVFormatContext加入新的流
  */
 static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
-	int w,int h,int stream_frame_rate,int stream_bit_rate)
+	int w, int h, AVRational stream_frame_rate, int stream_bit_rate)
 {
 	AVCodec *codec;
 	AVStream *st;
@@ -66,12 +66,12 @@ static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
 		c->sample_fmt = codec->sample_fmts ?
 			codec->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
 		c->bit_rate = stream_bit_rate;
-		c->sample_rate = stream_frame_rate;
+		c->sample_rate = stream_frame_rate.num;
 		if (codec->supported_samplerates) {
 			c->sample_rate = codec->supported_samplerates[0];
 			for (i = 0; codec->supported_samplerates[i]; i++) {
-				if (codec->supported_samplerates[i] == stream_frame_rate)
-					c->sample_rate = stream_frame_rate;
+				if (codec->supported_samplerates[i] == stream_frame_rate.num)
+					c->sample_rate = stream_frame_rate.num;
 			}
 		}
 		c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
@@ -95,8 +95,8 @@ static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
 		/* 分辨率必须是2的倍数，这里需要作检查 */
 		c->width = w;
 		c->height = h;
-		st->time_base.den = stream_frame_rate;
-		st->time_base.num = 1;
+		st->time_base.den = stream_frame_rate.num;
+		st->time_base.num = stream_frame_rate.den;
 		c->time_base = st->time_base;
 
 		c->gop_size = 12; /* emit one intra frame every twelve frames at most */
@@ -359,7 +359,10 @@ AVRaw * list_pop_raw(AVRaw ** head, AVRaw **tail)
 			*tail = *head;
 		}
 	}
-	return praw;
+	if (release_raw(praw) < 0)
+		return NULL;
+	else
+		return praw;
 }
 
 void ffFlush(AVEncodeContext *pec)
@@ -387,27 +390,35 @@ static AVRaw * ffPopFrame(AVEncodeContext * pec)
 			 * 或者通过isflush获知已经没有跟多数据了。如果在while循环结束还是没有数据
 			 * list_pop_raw将返回一个NULL指针，进而是压缩线程终止。
 			 */
+			pec->_encode_waiting = 1;
 			while (!pec->_video_head && !pec->_isflush)
 				pec->_cond->wait(lock);
+			pec->_encode_waiting = 0;
 			praw = list_pop_raw(&pec->_video_head, &pec->_video_tail);
 		}
 		else
 		{
+			pec->_encode_waiting = 1;
 			while (!pec->_audio_head && !pec->_isflush)
 				pec->_cond->wait(lock);
+			pec->_encode_waiting = 0;
 			praw = list_pop_raw(&pec->_audio_head, &pec->_audio_tail);
 		}
 	}
 	else if (pec->encode_video)
 	{
+		pec->_encode_waiting = 1;
 		if (!pec->_video_head&& !pec->_isflush)
 			pec->_cond->wait(lock);
+		pec->_encode_waiting = 0;
 		praw = list_pop_raw(&pec->_video_head, &pec->_video_tail);
 	}
 	else if (pec->encode_audio)
 	{
+		pec->_encode_waiting = 1;
 		if (!pec->_audio_head&& !pec->_isflush)
 			pec->_cond->wait(lock);
+		pec->_encode_waiting = 0;
 		praw = list_pop_raw(&pec->_audio_head, &pec->_audio_tail);
 	}
 
@@ -730,7 +741,7 @@ int encode_thread_proc(AVEncodeContext * pec)
  * 创建编码上下文
  */
 AVEncodeContext* ffCreateEncodeContext(const char* filename, 
-	int w, int h, int frameRate, int videoBitRate,AVCodecID video_codec_id,
+	int w, int h, AVRational frameRate, int videoBitRate, AVCodecID video_codec_id,
 	int sampleRate, int audioBitRate, AVCodecID audio_codec_id, AVDictionary * opt_arg)
 {
 	AVEncodeContext * pec;
@@ -773,7 +784,10 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename,
 	}
 	if (AV_CODEC_ID_NONE != audio_codec_id)
 	{
-		if (add_stream(pec, audio_codec_id, 0, 0, sampleRate, audioBitRate) < 0)
+		AVRational rat;
+		rat.num = sampleRate;
+		rat.den = 1;
+		if (add_stream(pec, audio_codec_id, 0, 0, rat, audioBitRate) < 0)
 		{
 			ffLog("Add audio stream failed\n");
 			ffCloseEncodeContext(pec);
@@ -912,6 +926,7 @@ int ffGetBufferSize(AVEncodeContext *pec)
 
 void list_push_raw(AVRaw ** head, AVRaw ** tail,AVRaw *praw)
 {
+	retain_raw(praw);
 	if (!*head)
 	{
 		*head = praw;
