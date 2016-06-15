@@ -29,7 +29,6 @@ extern "C" {
 #include "libswresample/swresample.h"
 
 #if CONFIG_AVFILTER
-# include "libavfilter/avcodec.h"
 # include "libavfilter/avfilter.h"
 # include "libavfilter/buffersink.h"
 # include "libavfilter/buffersrc.h"
@@ -182,6 +181,23 @@ namespace ff{
 		SHOW_MODE_NONE = -1, SHOW_MODE_VIDEO = 0, SHOW_MODE_WAVES, SHOW_MODE_RDFT, SHOW_MODE_NB
 	};
 
+	enum HWAccelID {
+		HWACCEL_NONE = 0,
+		HWACCEL_AUTO,
+		HWACCEL_VDPAU,
+		HWACCEL_DXVA2,
+		HWACCEL_VDA,
+		HWACCEL_VIDEOTOOLBOX,
+		HWACCEL_QSV,
+	};
+
+	typedef struct HWAccel {
+		const char *name;
+		int(*init)(AVCodecContext *s);
+		enum HWAccelID id;
+		enum AVPixelFormat pix_fmt;
+	} HWAccel;
+
 	struct VideoState {
 		thread_t *read_tid;
 		AVInputFormat *iformat;
@@ -292,6 +308,19 @@ namespace ff{
 		int nMIN_FRAMES;
 		const char *errmsg;
 		int errcode;
+
+		/* hwaccel options */
+		enum HWAccelID hwaccel_id;
+		char  *hwaccel_device;
+
+		/* hwaccel context */
+		enum HWAccelID active_hwaccel_id;
+		void  *hwaccel_ctx;
+		void(*hwaccel_uninit)(AVCodecContext *s);
+		int(*hwaccel_get_buffer)(AVCodecContext *s, AVFrame *frame, int flags);
+		int(*hwaccel_retrieve_data)(AVCodecContext *s, AVFrame *frame);
+		enum AVPixelFormat hwaccel_pix_fmt;
+		enum AVPixelFormat hwaccel_retrieved_pix_fmt;
 	};
 
 	/*

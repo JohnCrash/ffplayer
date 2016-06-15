@@ -1,7 +1,9 @@
 #include "CCFFmpegNode.h"
 
 #include <math.h>
+#include <Windows.h>
 
+//GGO_GRAY4_BITMAP
 USING_NS_CC;
 
 namespace ff
@@ -13,6 +15,13 @@ namespace ff
 		cocos2d::CCLog(fmt, argp);
 		va_end(argp);
 		return 1;
+	}
+}
+
+void break_point()
+{
+	__asm{
+		int 3
 	}
 }
 
@@ -58,10 +67,33 @@ CCFFmpegNode::~CCFFmpegNode()
 
 static int pidx = 0;
 static const char * movies[] = { 
-//	"g:\\1.mpg",
-	//"g:\\1.m3u8",
-	"g:\\Maps.mp3",
-	"g:\\2.mp4",
+	//"g:\\1.mpg",
+//	"g:\\1.m3u8",
+	"rtmp://live.lexinedu.com/ljlx/live?auth_key=1464419456-0-0-8035370decc104a6d865d8537e214224",
+//	"rtmp://live.lexinedu.com/ljlx/live?auth_key=1462961982-0-0-581a8d03acfaf52f3059340d0925d086",
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/5c6f6a9f777ff7fdb0dd0fd46b8f2eff1b75dc07.m3u8",
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/8f6cce8857b1fa6f388203df3e198273aa444116.m3u8",
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/91909accce6f8932ac6ed387c68e516805f552c1.m3u8",
+
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/810316e5b5de9319c455647e9e3fcf35d47a1cea.m3u8",
+
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/9859e13d0818cb40f67012328a810ae365580744.m3u8",
+
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/50e44602bb1afc8227eb7a142e8ee294670c00ca.m3u8",
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/b4ddc62057af8b3f8fd3d5f29cd60d6d54c66e2f.m3u8",
+
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/8666665950f178f5eec9d425cbce2969fd4408a2.m3u8",
+
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/1bc066463d8053d4c713701d1b5f7b9a6664163c.m3u8",
+
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/d164f38e5b616b70040ad781a4d82a2128da325e.m3u8",
+
+	"http://7pn4y1.com2.z0.glb.qiniucdn.com/237004101942e074b94f044ab004b5589536755d.m3u8",
+
+
+//	"http://7pn4y1.com2.z0.glb.qiniucdn.com/1c399f3c5802601b7be2d295e6bc1c68ee8d5f08.m3u8",
+//	"g:\\Maps.mp3",
+//	"g:\\1.mp4",
 	"http://7pn4y1.com2.z0.glb.qiniucdn.com/272972c2ab7a5b01186d759108517cea21a69ef0.m3u8",
 	"http://dl-lejiaolexue.qiniudn.com/07766ef6c835484fa8eaf606353f0cee.m3u8",
 	"http://dl-lejiaolexue.qiniudn.com/92dc0b8689d64c1682d3d3f2501b3e8d.m3u8",
@@ -77,6 +109,9 @@ bool CCFFmpegNode::initWithURL(const std::string& url)
 	return _video.open(movies[pidx++]);
 }
 
+bool playFlag = false;
+double playingPos = 0;
+
 void CCFFmpegNode::updateTexture(float dt)
 {
 
@@ -86,7 +121,7 @@ void CCFFmpegNode::updateTexture(float dt)
 	if (data )
 	{
 		if (_texture && _width == _video.width() && _height == _video.height()){
-			_video.set_preload_time(10);
+			_video.set_preload_time(1);
 			_texture->updateWithData(data, 0, 0, _width, _height);
 		}
 		else
@@ -164,6 +199,7 @@ void CCFFmpegNode::updateTexture(float dt)
 			_bar->setPercent(100 * _video.cur() / _video.length());
 	}
 	//打印状态
+	/*
 	CCLog("pos : %f s (total %f s,isplaying %s, isEnd %s,isSeeking %s,isPause %s ,preload %d,preload_time %.2f)", _video.cur(), _video.length(),
 		_video.isPlaying() ? "true" : "false",
 		_video.isEnd() ? "true" : "false",
@@ -171,7 +207,23 @@ void CCFFmpegNode::updateTexture(float dt)
 		_video.isPause() ? "true" : "false",
 		_video.preload_packet_nb(),
 		_video.preload_time());
+		*/
+	if (_video.isOpen() && !_video.isSeeking())
+	{
+		if (_video.isPause()){
+			_video.play();
+			playFlag = true;
+		}
+	}
 
+	if (_video.isOpen() && _video.isPlaying())
+	{
+		if (_video.cur() - playingPos > 0.2)
+		{
+			playingPos = _video.cur();
+		}
+		playingPos = _video.cur();
+	}
 	//结束播放下一首
 	if (_video.isEnd() || _video.isError())
 	{
@@ -185,11 +237,15 @@ void CCFFmpegNode::updateTexture(float dt)
 		{
 				std::string file = FileUtils::getInstance()->fullPathForFilename (name);
 				_video.open( file.c_str() );
+				playFlag = false;
+				playingPos = 0;
 				CCLog("open %s ", file.c_str());
 		}
 		else
 		{
 			_video.open(name);
+			playFlag = false;
+			playingPos = 0;
 			CCLog("open %s ", name);
 		}
 		if (pidx >= sizeof(movies) / sizeof(const char*))

@@ -171,9 +171,15 @@ static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
 {
 	int w, h;
 
+/*
+	FIXBUG : 后面的转换操作是1:1的转换(DisplayYUVOverlay)，这里个别情况会调整宽高比(vp->sar)
+	修改为简单的设置宽高为帧的宽高。如果需要使用显示宽高，那么最好提供一个函数用来返回显示宽高，
+	在材质的层面上进行缩放效率会比较高。
 	if (vp && vp->width)
 		set_default_window_size(vp->width, vp->height, vp->sar);
-
+*/
+	default_width = vp->width;
+	default_height = vp->height;
 	w = default_width;
 	h = default_height;
 
@@ -607,10 +613,13 @@ static double get_clock(Clock *c)
 	if (*c->queue_serial != c->serial)
 		return NAN;
 	if (c->paused) {
+		//My_log(0, 0, "c->pts = %f \n", c->pts);
 		return c->pts;
 	}
 	else {
 		double time = av_gettime_relative() / 1000000.0;
+		//My_log(0, 0, "pts_drift = %f,last_updated = %f , speed = %f time = %f\n",
+		//	c->pts_drift, c->last_updated,c->speed,time);
 		return c->pts_drift + time - (time - c->last_updated) * (1.0 - c->speed);
 	}
 }
@@ -1467,7 +1476,7 @@ static void stream_component_close(VideoState *is, int stream_index)
 
 static double compute_target_delay(double delay, VideoState *is)
 {
-	double sync_threshold, diff;
+	double sync_threshold, diff = 0;
 
 	/* update delay to follow master synchronisation source */
 	if (get_master_sync_type(is) != AV_SYNC_VIDEO_MASTER) {
@@ -1823,6 +1832,18 @@ static int queue_picture(VideoState *is, AVFrame *src_frame, double pts, double 
 	return 0;
 }
 
+void LogBin2(int size, unsigned char * buf)
+{
+	int i = 0;
+	while (size >= 16){
+		My_log(0, 0, "%X %X %X %X %X %X %X %X - %X %X %X %X %X %X %X %X\n", 
+			buf[i], buf[i+1], buf[i+2], buf[i+3], buf[i+4], buf[i+5], buf[i+6], buf[i+7],
+			buf[i+8], buf[i + 9], buf[i + 10], buf[i + 11], buf[i + 12], buf[i + 13], buf[i + 14], buf[i + 15]);
+		i += 16;
+		size -= 16;
+	}
+}
+
 static int decoder_decode_frame(Decoder *d, AVFrame *frame, AVSubtitle *sub) {
 	int got_frame = 0;
 
@@ -1854,6 +1875,8 @@ static int decoder_decode_frame(Decoder *d, AVFrame *frame, AVSubtitle *sub) {
 		switch (d->avctx->codec_type) {
 		case AVMEDIA_TYPE_VIDEO:
 			ret = avcodec_decode_video2(d->avctx, frame, &got_frame, &d->pkt_temp);
+		//	LogBin2(d->pkt_temp.size, d->pkt_temp.data);
+			My_log(0, 0, "ret = %d , pksize=%d,got_frame=%d\n", ret,d->pkt_temp.size, got_frame);
 			if (got_frame) {
 				if (decoder_reorder_pts == -1) {
 					frame->pts = av_frame_get_best_effort_timestamp(frame);
@@ -1925,14 +1948,18 @@ static int get_video_frame(VideoState *is, AVFrame *frame)
 	if (got_picture) {
 		double dpts = NAN;
 
-		if (frame->pts != AV_NOPTS_VALUE)
+		if (frame->pts != AV_NOPTS_VALUE){
 			dpts = av_q2d(is->video_st->time_base) * frame->pts;
+			My_log(0, 0, "time_base=%d/%d,%d,%f", (int)is->video_st->time_base.den, (int)is->video_st->time_base.num, (int)frame->pts, dpts);
+		}
 
 		frame->sample_aspect_ratio = av_guess_sample_aspect_ratio(is->ic, is->video_st, frame);
 
 		if (framedrop>0 || (framedrop && get_master_sync_type(is) != AV_SYNC_VIDEO_MASTER)) {
 			if (frame->pts != AV_NOPTS_VALUE) {
-				double diff = dpts - get_master_clock(is);
+				double mc = get_master_clock(is);
+				double diff = dpts - mc;
+				My_log(0, 0, "dpts = %f,mc = %f,diff = %f \n", dpts,mc,diff);
 				if (!isnan(diff) && fabs(diff) < AV_NOSYNC_THRESHOLD &&
 					diff - is->frame_last_filter_delay < 0 &&
 					is->viddec.pkt_serial == is->vidclk.serial &&
@@ -1940,6 +1967,7 @@ static int get_video_frame(VideoState *is, AVFrame *frame)
 					is->frame_drops_early++;
 					av_frame_unref(frame);
 					got_picture = 0;
+					My_log(0, 0, "diff < AV_NOSYNC_THRESHOLD diff = %f \n", diff);
 				}
 			}
 		}
@@ -2314,10 +2342,14 @@ static int video_thread(void *arg){
 
 	for (;;) {
 		ret = get_video_frame(is, frame);
-		if (ret < 0)
+		if (ret < 0){
+			My_log(0, 0, "ret < 0 !\n");
 			goto the_end;
-		if (!ret)
+		}
+		if (!ret){
+			My_log(0, 0, "continue ret==0\n");
 			continue;
+		}
 
 #if CONFIG_AVFILTER
 		if (last_w != frame->width
@@ -2340,6 +2372,7 @@ static int video_thread(void *arg){
 				event.user.data1 = is;
 				PushEvent(&event);
 				*/
+				My_log(0, 0, "goto end1 !\n");
 				goto the_end;
 			}
 			filt_in = is->in_video_filter;
@@ -2353,8 +2386,10 @@ static int video_thread(void *arg){
 		}
 
 		ret = av_buffersrc_add_frame(filt_in, frame);
-		if (ret < 0)
+		if (ret < 0){
+			My_log(0, 0, "goto end!\n");
 			goto the_end;
+		}
 
 		while (ret >= 0) {
 			is->frame_last_returned_time = av_gettime_relative() / 1000000.0;
@@ -2363,6 +2398,9 @@ static int video_thread(void *arg){
 			if (ret < 0) {
 				if (ret == AVERROR_EOF)
 					is->viddec.finished = is->viddec.pkt_serial;
+				char errmsg[1024];
+				av_strerror(ret, errmsg, 1024);
+				My_log(0, 0, "AVERROR %d %s\n",ret,errmsg);
 				ret = 0;
 				break;
 			}
@@ -2382,6 +2420,7 @@ static int video_thread(void *arg){
 			else
 				duration = 0;
 			pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);
+			My_log(0, 0, "call queue_picture\n");
 			ret = queue_picture(is, frame, pts, duration, av_frame_get_pkt_pos(frame), is->viddec.pkt_serial);
 			av_frame_unref(frame);
 #if CONFIG_AVFILTER
@@ -2532,6 +2571,81 @@ AVDictionary **setup_find_stream_info_opts(AVFormatContext *s,
 	return opts;
 }
 
+const HWAccel hwaccels[] = {
+#if HAVE_VDPAU_X11
+	{ "vdpau", vdpau_init, HWACCEL_VDPAU, AV_PIX_FMT_VDPAU },
+#endif
+#if HAVE_DXVA2_LIB
+//	{ "dxva2", dxva2_init, HWACCEL_DXVA2, AV_PIX_FMT_DXVA2_VLD },
+#endif
+#if CONFIG_VDA
+	{ "vda", videotoolbox_init, HWACCEL_VDA, AV_PIX_FMT_VDA },
+#endif
+#if CONFIG_VIDEOTOOLBOX
+	{ "videotoolbox", videotoolbox_init, HWACCEL_VIDEOTOOLBOX, AV_PIX_FMT_VIDEOTOOLBOX },
+#endif
+#if CONFIG_LIBMFX
+	{ "qsv", qsv_init, HWACCEL_QSV, AV_PIX_FMT_QSV },
+#endif
+	{ 0 },
+};
+
+static const HWAccel *get_hwaccel(enum AVPixelFormat pix_fmt)
+{
+	int i;
+	for (i = 0; hwaccels[i].name; i++)
+	if (hwaccels[i].pix_fmt == pix_fmt)
+		return &hwaccels[i];
+	return NULL;
+}
+
+static int get_buffer(struct AVCodecContext *s, AVFrame *frame, int flags)
+{
+	VideoState *ist = (VideoState *)s->opaque;
+
+	if (ist->hwaccel_get_buffer && frame->format == ist->hwaccel_pix_fmt)
+		return ist->hwaccel_get_buffer(s, frame, flags);
+
+	return avcodec_default_get_buffer2(s, frame, flags);
+}
+
+static enum AVPixelFormat get_format(struct AVCodecContext *s, const enum AVPixelFormat * pix_fmts)
+{
+	VideoState *ist = (VideoState *)s->opaque;
+	const enum AVPixelFormat *p;
+	int ret;
+
+	for (p = pix_fmts; *p != -1; p++) {
+		const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
+		const HWAccel *hwaccel;
+
+		if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL))
+			break;
+
+		hwaccel = get_hwaccel(*p);
+		if (!hwaccel ||
+			(ist->active_hwaccel_id && ist->active_hwaccel_id != hwaccel->id) ||
+			(ist->hwaccel_id != HWACCEL_AUTO && ist->hwaccel_id != hwaccel->id))
+			continue;
+
+		ret = hwaccel->init(s);
+		if (ret < 0) {
+			if (ist->hwaccel_id == hwaccel->id) {
+				av_log(NULL, AV_LOG_FATAL,
+					"%s hwaccel requested for input stream #?:?, "
+					"but cannot be initialized.\n", hwaccel->name);
+				return AV_PIX_FMT_NONE;
+			}
+			continue;
+		}
+		ist->active_hwaccel_id = hwaccel->id;
+		ist->hwaccel_pix_fmt = *p;
+		break;
+	}
+
+	return *p;
+}
+
 /* open a given stream. Return 0 if OK */
 static int stream_component_open(VideoState *is, int stream_index)
 {
@@ -2587,6 +2701,13 @@ static int stream_component_open(VideoState *is, int stream_index)
 		av_dict_set_int(&opts, "lowres", stream_lowres, 0);
 	if (avctx->codec_type == AVMEDIA_TYPE_VIDEO || avctx->codec_type == AVMEDIA_TYPE_AUDIO)
 		av_dict_set(&opts, "refcounted_frames", "1", 0);
+
+	/* 加入硬件加速测试 */
+	avctx->opaque = is;
+	avctx->get_buffer2 = get_buffer; 
+	avctx->get_format = get_format;
+	avctx->thread_safe_callbacks = 1;
+	/**/
 	if ((ret = avcodec_open2(avctx, codec, &opts)) < 0) {
 		goto fail;
 	}
@@ -2695,6 +2816,35 @@ void step_to_next_frame(VideoState *is)
 	is->step = 1;
 }
 
+/*
+ * 取得视频文件的流信息
+ */
+int getVideoInfo(const char * filename,int *w,int *h)
+{
+	int err, i;
+	AVFormatContext *ic = NULL;
+	ic = avformat_alloc_context();
+	err = avformat_open_input(&ic, filename, NULL, &format_opts);
+	if (err < 0) {
+		char errmsg[1024];
+		av_strerror(err, errmsg, 1024);
+		My_log(NULL, AV_LOG_ERROR, "ffmpeg error msg:%s", errmsg);
+		return 0;
+	}
+	for (i = 0; i < ic->nb_streams; i++) {
+		AVStream *st = ic->streams[i];
+		enum AVMediaType type = st->codec->codec_type;
+		if (type == AVMEDIA_TYPE_VIDEO){
+			*w = st->codec->width;
+			*h = st->codec->height;
+			avformat_close_input(&ic);
+			return 1;
+		}
+	}
+	avformat_close_input(&ic);
+	return 0;
+}
+
 /* this thread gets the stream from the disk or the network */
 static int read_thread(void *arg)
 {
@@ -2719,6 +2869,18 @@ static int read_thread(void *arg)
 	is->eof = 0;
 
 	ic = avformat_alloc_context();
+	My_log(0, 0, "filename = %d \n start_time = %d \n duration = %d \n bit_rate = %d \n packet_size = %d \n max_delay = %d", 
+		offsetof(AVFormatContext, filename),
+		offsetof(AVFormatContext, start_time),
+		offsetof(AVFormatContext, duration),
+		offsetof(AVFormatContext, bit_rate),
+		offsetof(AVFormatContext, packet_size),
+		offsetof(AVFormatContext, max_delay));
+	My_log(0, 0, "duration = %d \n bit_rate = %d \n packet_size = %d \n max_delay = %d",
+		sizeof(ic->duration),
+		sizeof(ic->bit_rate), 
+		sizeof(ic->packet_size), 
+		sizeof(ic->max_delay));
 	if (!ic) {
 		//My_log(NULL, AV_LOG_FATAL, "Could not allocate context.\n");
 		ret = AVERROR(ENOMEM);
@@ -3280,6 +3442,16 @@ void seek_chapter(VideoState *is, int incr)
 		AV_TIME_BASE_q), 0, 0);
 }
 
+void my_av_log(void* ptr, int level, const char* fmt, va_list args)
+{
+	char dst[4028];
+	va_list vl;
+	va_copy(vl, args);
+	vsnprintf(dst, 4028, fmt, vl);
+	printf("%s", dst);
+	va_end(vl);
+}
+
 void initFF()
 {
 	/* register all codecs, demux and protocols */
@@ -3299,6 +3471,7 @@ void initFF()
 
 	av_init_packet(&flush_pkt);
 	flush_pkt.data = (uint8_t *)&flush_pkt;
+	av_log_set_callback(my_av_log);
 }
 
 }

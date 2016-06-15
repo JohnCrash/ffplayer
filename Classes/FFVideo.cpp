@@ -71,8 +71,8 @@ namespace ff
 		VideoState* is = (VideoState*)_ctx;
 		if (is)
 		{
-			
-			return FFMAX(is->videoq.nb_packets,is->audioq.nb_packets);
+		//	return FFMAX(is->videoq.nb_packets,is->audioq.nb_packets);
+			return is->videoq.nb_packets;
 		}
 		return -1;
 	}

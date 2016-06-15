@@ -8,3 +8,7 @@ proj.android/assets/
 proj.android/obj/
 proj.android/bin/
 proj.android/libs/
+Classes/new/
+Classes/old/
+proj.win32/
+*.zip
