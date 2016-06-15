@@ -91,8 +91,11 @@ namespace ff
 		VideoState* is = (VideoState*)_ctx;
 		if (is)
 		{
-			
-			return FFMAX(is->videoq.nb_packets,is->audioq.nb_packets);
+		//	return FFMAX(is->videoq.nb_packets,is->audioq.nb_packets);
+			if (is->video_st)
+				return is->videoq.nb_packets;
+			else if (is->audio_st)
+				return is->audioq.nb_packets;
 		}
 		return -1;
 	}
@@ -344,7 +347,11 @@ namespace ff
 		VideoState* is = (VideoState*)_ctx;
 		if (is)
 		{
-			return FFMAX(calc_stream_preload_time(&is->videoq,is->video_st),calc_stream_preload_time(&is->audioq,is->audio_st));
+			//return FFMAX(calc_stream_preload_time(&is->videoq,is->video_st),calc_stream_preload_time(&is->audioq,is->audio_st));
+			if (is->video_st)
+				return calc_stream_preload_time(&is->videoq, is->video_st);
+			else if (is->audio_st)
+				return calc_stream_preload_time(&is->audioq, is->audio_st);
 		}
 		return -1;
 	}
