@@ -23,7 +23,7 @@
  * simple media player based on the FFmpeg libraries
  */
 #define inline _inline
-#include "config.h"
+#include "ffconfig.h"
 #include <inttypes.h>
 #include <math.h>
 #include <limits.h>

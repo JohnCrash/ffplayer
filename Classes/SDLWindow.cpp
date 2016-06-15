@@ -16,7 +16,7 @@ namespace ff{
 	}
 
 	// µœ÷SDL_GetError()
-	char *GetError(void)
+	const char *GetError(void)
 	{
 		return "";
 	}

@@ -15,31 +15,32 @@
 * License along with FFmpeg; if not, write to the Free Software
 * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 */
-
-#include "ffdepends.h"
-
-using namespace ff;
+#define CONFIG_VIDEOTOOLBOX 1
 
 #if HAVE_UTGETOSTYPEFROMSTRING
 #include <CoreServices/CoreServices.h>
 #endif
 
-#include "libavcodec/avcodec.h"
-#if CONFIG_VDA
-#  include "libavcodec/vda.h"
-#endif
-#if CONFIG_VIDEOTOOLBOX
-#  include "libavcodec/videotoolbox.h"
-#endif
-#include "libavutil/imgutils.h"
-#include "ffmpeg.h"
+#include "ffdepends.h"
 
+using namespace ff;
+
+extern "C" {
 typedef struct VTContext {
 	AVFrame *tmp_frame;
 } VTContext;
 
 char *videotoolbox_pixfmt;
-
+/*
+ * 直接将AV_FMT_PIX_VIDEOTOOLBOX格式转换为3个OpenGL材质
+ */
+static int videotoolbox_retrieve_texture(AVCodecContext *s, AVFrame *frame)
+{
+    return 0;
+}
+/*
+ * 将AV_FMT_PIX_VIDEOTOOLBOX转化为frame,使用的是复制操作
+ */
 static int videotoolbox_retrieve_data(AVCodecContext *s, AVFrame *frame)
 {
 	VideoState *ist = (VideoState *)s->opaque;
@@ -63,7 +64,7 @@ static int videotoolbox_retrieve_data(AVCodecContext *s, AVFrame *frame)
 #endif
 	default:
 		av_get_codec_tag_string(codec_str, sizeof(codec_str), s->codec_tag);
-		av_log(NULL, AV_LOG_ERROR,
+		My_log(NULL, AV_LOG_ERROR,
 			"%s: Unsupported pixel format: %s\n", codec_str, videotoolbox_pixfmt);
 		return AVERROR(ENOSYS);
 	}
@@ -76,7 +77,7 @@ static int videotoolbox_retrieve_data(AVCodecContext *s, AVFrame *frame)
 
 	err = CVPixelBufferLockBaseAddress(pixbuf, kCVPixelBufferLock_ReadOnly);
 	if (err != kCVReturnSuccess) {
-		av_log(NULL, AV_LOG_ERROR, "Error locking the pixel buffer.\n");
+		My_log(NULL, AV_LOG_ERROR, "Error locking the pixel buffer.\n");
 		return AVERROR_UNKNOWN;
 	}
 
@@ -84,17 +85,17 @@ static int videotoolbox_retrieve_data(AVCodecContext *s, AVFrame *frame)
 
 		planes = CVPixelBufferGetPlaneCount(pixbuf);
 		for (i = 0; i < planes; i++) {
-			data[i] = CVPixelBufferGetBaseAddressOfPlane(pixbuf, i);
+			data[i] = (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(pixbuf, i);
 			linesize[i] = CVPixelBufferGetBytesPerRowOfPlane(pixbuf, i);
 		}
 	}
 	else {
-		data[0] = CVPixelBufferGetBaseAddress(pixbuf);
+		data[0] = (uint8_t *)CVPixelBufferGetBaseAddress(pixbuf);
 		linesize[0] = CVPixelBufferGetBytesPerRow(pixbuf);
 	}
 
 	av_image_copy(vt->tmp_frame->data, vt->tmp_frame->linesize,
-		(const uint8_t **)data, linesize, vt->tmp_frame->format,
+		(const uint8_t **)data, linesize, (AVPixelFormat)vt->tmp_frame->format,
 		frame->width, frame->height);
 
 	ret = av_frame_copy_props(vt->tmp_frame, frame);
@@ -133,12 +134,12 @@ static void videotoolbox_uninit(AVCodecContext *s)
 
 int videotoolbox_init(AVCodecContext *s)
 {
-	InputStream *ist = s->opaque;
-	int loglevel = (ist->hwaccel_id == HWACCEL_AUTO) ? AV_LOG_VERBOSE : AV_LOG_ERROR;
+	VideoState *ist = (VideoState *)s->opaque;
+    int loglevel = AV_LOG_VERBOSE;//(ist->hwaccel_id == HWACCEL_AUTO) ? AV_LOG_VERBOSE : AV_LOG_ERROR;
 	int ret = 0;
 	VTContext *vt;
 
-	vt = av_mallocz(sizeof(*vt));
+	vt = (VTContext *)av_mallocz(sizeof(*vt));
 	if (!vt)
 		return AVERROR(ENOMEM);
 
@@ -165,7 +166,7 @@ int videotoolbox_init(AVCodecContext *s)
 #if HAVE_UTGETOSTYPEFROMSTRING
 			vtctx->cv_pix_fmt_type = UTGetOSTypeFromString(pixfmt_str);
 #else
-			av_log(s, loglevel, "UTGetOSTypeFromString() is not available "
+			My_log(s, loglevel, "UTGetOSTypeFromString() is not available "
 				"on this platform, %s pixel format can not be honored from "
 				"the command line\n", videotoolbox_pixfmt);
 #endif
@@ -187,7 +188,7 @@ int videotoolbox_init(AVCodecContext *s)
 #if HAVE_UTGETOSTYPEFROMSTRING
 			vdactx->cv_pix_fmt_type = UTGetOSTypeFromString(pixfmt_str);
 #else
-			av_log(s, loglevel, "UTGetOSTypeFromString() is not available "
+			My_log(s, loglevel, "UTGetOSTypeFromString() is not available "
 				"on this platform, %s pixel format can not be honored from "
 				"the command line\n", videotoolbox_pixfmt);
 #endif
@@ -197,7 +198,7 @@ int videotoolbox_init(AVCodecContext *s)
 #endif
 	}
 	if (ret < 0) {
-		av_log(NULL, loglevel,
+		My_log(NULL, loglevel,
 			"Error creating %s decoder.\n", ist->hwaccel_id == HWACCEL_VIDEOTOOLBOX ? "Videotoolbox" : "VDA");
 		goto fail;
 	}
@@ -206,4 +207,5 @@ int videotoolbox_init(AVCodecContext *s)
 fail:
 	videotoolbox_uninit(s);
 	return ret;
+}
 }

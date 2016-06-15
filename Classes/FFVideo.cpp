@@ -1,8 +1,28 @@
 #include "ff.h"
 #include "ffdepends.h"
+#include "cocos2d.h"
 
 namespace ff
 {
+/*
+    static double cc_clock()
+    {
+        double clock;
+#if CC_TARGET_PLATFORM == CC_PLATFORM_WIN32
+        clock = (double)GetTickCount();
+#else
+        timeval tv;
+        gettimeofday(&tv,NULL);
+        clock = (double)tv.tv_sec*1000.0 + (double)(tv.tv_usec)/1000.0;
+#endif
+        return clock;
+    }
+*/
+    VideoPixelFormat FFVideo::getPixelFormat()
+    {
+        return VIDEO_PIX_YUV420P;
+    }
+
 	static bool isInitFF = false;
 
 	FFVideo::FFVideo() :_ctx(nullptr)
@@ -22,7 +42,7 @@ namespace ff
 	{
 		_first = true;
 		close();
-		_ctx = stream_open(url, NULL);
+        _ctx = stream_open(url, NULL);
 		return _ctx != nullptr;
 	}
 
@@ -71,8 +91,8 @@ namespace ff
 		VideoState* is = (VideoState*)_ctx;
 		if (is)
 		{
-		//	return FFMAX(is->videoq.nb_packets,is->audioq.nb_packets);
-			return is->videoq.nb_packets;
+			
+			return FFMAX(is->videoq.nb_packets,is->audioq.nb_packets);
 		}
 		return -1;
 	}
@@ -150,6 +170,7 @@ namespace ff
 
 	bool FFVideo::isPlaying() const
 	{
+		if (!hasVideo() || !isOpen()) return false;
 		return !isPause();
 	}
 
@@ -181,36 +202,54 @@ namespace ff
 	{
 		if (!isOpen())return -1;
 		VideoState* _vs = (VideoState*)_ctx;
-		if (!_vs->pscreen)return -1;
-		return _vs->pscreen->w;
+		return _vs->width;
 	}
 
 	int FFVideo::height() const
 	{
 		if (!isOpen())return -1;
 		VideoState* _vs = (VideoState*)_ctx;
-		if (!_vs->pscreen)return -1;
-		return _vs->pscreen->h;
+		return _vs->height;
 	}
 
+//    static double t0 = 0;
 	void *FFVideo::refresh()
 	{
+//        if(t0==0)
+//            t0=cc_clock();
+//        CCLOG("refresh == %f ",cc_clock()-t0);
+//        t0 = cc_clock();
+        
 		VideoState* _vs = (VideoState*)_ctx;
-		if (_vs && _vs->pscreen2)
+		if (_vs)
 		{
 			double r = 1.0 / 30.0;
 			if (!is_stream_pause((VideoState*)_ctx))
+			{
 				video_refresh(_vs, &r);
-			if (_vs->pscreen){
-				if (_first){
+			}
+			if (_vs->pyuv420p.w > 0 && _vs->pyuv420p.h > 0)
+			{
+				if (_first)
+				{
 					pause();
 					_first = false;
 				}
-				return _vs->pscreen->pixels;
+				return &_vs->pyuv420p;
 			}
 		}
 		return nullptr;
 	}
+
+    void *FFVideo::allocRgbBufferFormYuv420p(void *pyuv)
+    {
+		return yuv420pToRgb((yuv420p *)pyuv);
+    }
+    
+    void FFVideo::freeRgbBuffer(void * prgb)
+    {
+        freeRgb(prgb);
+    }
 
 	void FFVideo::pause()
 	{
@@ -258,16 +297,16 @@ namespace ff
 	}
 
 	/*
-	 * ������Ƶ����Ƶ����ƽ�����ʣ�ÿ����ٸ�����
+	 * º∆À„ ”∆µªÚ“Ù∆µ¡˜µƒ∆Ωæ˘∞¸¬ £®√ø√Î∂‡…Ÿ∏ˆ∞¸£�?
 	 */
 	static double calc_avg_pocket_rate(AVStream *st)
 	{
 		if (st){
 			if (st->avg_frame_rate.den>0 && st->avg_frame_rate.num>0) 
-				return (double)st->avg_frame_rate.num / (double)st->avg_frame_rate.den;//����Ѿ���ƽ�����ʣ�ֱ�ӷ���
+				return (double)st->avg_frame_rate.num / (double)st->avg_frame_rate.den;//»Áπ˚“—æ≠”–∆Ωæ˘∞¸¬ £¨÷±Ω”∑µªÿ
 
 			if (st->time_base.den > 0){
-				double tt = st->duration* (double)st->time_base.num / (double)st->time_base.den; //���ܵ�ʱ��
+				double tt = st->duration* (double)st->time_base.num / (double)st->time_base.den; //¡˜◊‹µƒ ±º�?
 				if ( tt > 0 )
 					return (double)st->nb_frames / tt;
 			}
@@ -283,7 +322,7 @@ namespace ff
 			}
 			else{
 				/* 
-				 * �����Ƶ�Ѿ��������һ���������ݲ�����pts��PacketQueue��һ����������ҳ��Դ�ͷ����ʼѰ�����һ����ȷ�İ�
+				 * »Áπ˚ ”∆µ“—æ≠Ω· ¯◊Ó∫Û“ª∏ˆ∞¸µƒ ˝æ›≤ª∞¸¿®pts£¨PacketQueue «“ª∏ˆµ•œÚ∂”¡–Œ“≥¢ ‘¥”Õ∑≤øø™ º—∞’“◊Ó∫Û“ª∏ˆ’˝»∑µƒ∞�?
 				 */
 				MyAVPacketList *last = NULL;
 				for (MyAVPacketList *it = pq->first_pkt; it != NULL; it = it->next){
@@ -297,8 +336,7 @@ namespace ff
 				}
 			}
 		}
-		else
-			return 0;
+		return 0;
 	}
 
 	double FFVideo::preload_time()
@@ -316,6 +354,7 @@ namespace ff
 		VideoState* is = (VideoState*)_ctx;
 		if (is && t>=0 )
 		{
+			if (!is->video_st)return false;
 			double apr = calc_avg_pocket_rate(is->video_st);
 			if (apr > 0){
 				set_preload_nb((int)(apr*t));
@@ -326,8 +365,8 @@ namespace ff
 				set_preload_nb((int)(apr*t));
 				return true;
 			}
-			//���������ȷ����ƽ�����ʾͻָ�ΪĬ������
-			set_preload_nb(50);
+			//»Áπ˚≤ªƒ‹’˝»∑º∆À„∆Ωæ˘∞¸¬ æÕª÷∏¥Œ™ƒ¨»œ…Ë÷√
+			set_preload_nb(150);
 		}
 		return false;
 	}

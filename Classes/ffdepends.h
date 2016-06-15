@@ -10,7 +10,7 @@
 #if __cplusplus
 extern "C" {
 #endif
-#include "config.h"
+#include "ffconfig.h"
 #include "libavutil/avstring.h"
 #include "libavutil/colorspace.h"
 #include "libavutil/mathematics.h"
@@ -25,10 +25,22 @@ extern "C" {
 #include "libavdevice/avdevice.h"
 #include "libswscale/swscale.h"
 #include "libavutil/opt.h"
+#include "libavutil/display.h"
+#include "libavutil/eval.h"
+#include "libavutil/dict.h"
 #include "libavcodec/avfft.h"
 #include "libswresample/swresample.h"
 
+#if CONFIG_VDA
+#  include "libavcodec/vda.h"
+#endif
+    
+#if CONFIG_VIDEOTOOLBOX
+#  include "libavcodec/videotoolbox.h"
+#endif
+    
 #if CONFIG_AVFILTER
+# include "libavcodec/avcodec.h"
 # include "libavfilter/avfilter.h"
 # include "libavfilter/buffersink.h"
 # include "libavfilter/buffersrc.h"
@@ -101,8 +113,8 @@ namespace ff{
 		cond_t *cond;
 	};
 
-#define VIDEO_PICTURE_QUEUE_SIZE 3
-#define SUBPICTURE_QUEUE_SIZE 16
+#define VIDEO_PICTURE_QUEUE_SIZE 6
+#define SUBPICTURE_QUEUE_SIZE 6
 #define SAMPLE_QUEUE_SIZE 9
 #define FRAME_QUEUE_SIZE FFMAX(SAMPLE_QUEUE_SIZE, FFMAX(VIDEO_PICTURE_QUEUE_SIZE, SUBPICTURE_QUEUE_SIZE))
 
@@ -133,7 +145,6 @@ namespace ff{
 		double pts;           /* presentation timestamp for the frame */
 		double duration;      /* estimated duration of the frame */
 		int64_t pos;          /* byte position of the frame in the input file */
-		Overlay *bmp;
 		int allocated;
 		int reallocate;
 		int width;
@@ -181,23 +192,29 @@ namespace ff{
 		SHOW_MODE_NONE = -1, SHOW_MODE_VIDEO = 0, SHOW_MODE_WAVES, SHOW_MODE_RDFT, SHOW_MODE_NB
 	};
 
-	enum HWAccelID {
-		HWACCEL_NONE = 0,
-		HWACCEL_AUTO,
-		HWACCEL_VDPAU,
-		HWACCEL_DXVA2,
-		HWACCEL_VDA,
-		HWACCEL_VIDEOTOOLBOX,
-		HWACCEL_QSV,
-	};
-
-	typedef struct HWAccel {
-		const char *name;
-		int(*init)(AVCodecContext *s);
-		enum HWAccelID id;
-		enum AVPixelFormat pix_fmt;
-	} HWAccel;
-
+    enum HWAccelID {
+        HWACCEL_NONE = 0,
+        HWACCEL_AUTO,
+        HWACCEL_VDPAU,
+        HWACCEL_DXVA2,
+        HWACCEL_VDA,
+        HWACCEL_VIDEOTOOLBOX,
+        HWACCEL_QSV,
+    };
+    
+    typedef struct HWAccel {
+        const char *name;
+        int(*init)(AVCodecContext *s);
+        enum HWAccelID id;
+        enum AVPixelFormat pix_fmt;
+    } HWAccel;
+    
+    typedef struct yuv420p{
+        int w,h;
+        uint8_t * data[3];
+        int linesize[3];
+    } yuv420p;
+    
 	struct VideoState {
 		thread_t *read_tid;
 		AVInputFormat *iformat;
@@ -302,25 +319,32 @@ namespace ff{
 		/*
 		一个RGB缓冲区
 		*/
-		Surface *pscreen;
-		Surface *pscreen2;
+	//	Surface *pscreen;
+	//	Surface *pscreen2;
+        yuv420p pyuv420p;
+        AVFrame * _currentFrame;
+        int     isNewFrame;
+        int     isVideoOpen;
+        
 		double current;
 		int nMIN_FRAMES;
 		const char *errmsg;
 		int errcode;
-
-		/* hwaccel options */
-		enum HWAccelID hwaccel_id;
-		char  *hwaccel_device;
-
-		/* hwaccel context */
-		enum HWAccelID active_hwaccel_id;
-		void  *hwaccel_ctx;
-		void(*hwaccel_uninit)(AVCodecContext *s);
-		int(*hwaccel_get_buffer)(AVCodecContext *s, AVFrame *frame, int flags);
-		int(*hwaccel_retrieve_data)(AVCodecContext *s, AVFrame *frame);
-		enum AVPixelFormat hwaccel_pix_fmt;
-		enum AVPixelFormat hwaccel_retrieved_pix_fmt;
+        
+#if CONFIG_VIDEOTOOLBOX
+        /* hwaccel options */
+        enum HWAccelID hwaccel_id;
+        char  *hwaccel_device;
+        
+        /* hwaccel context */
+        enum HWAccelID active_hwaccel_id;
+        void  *hwaccel_ctx;
+        void(*hwaccel_uninit)(AVCodecContext *s);
+        int(*hwaccel_get_buffer)(AVCodecContext *s, AVFrame *frame, int flags);
+        int(*hwaccel_retrieve_data)(AVCodecContext *s, AVFrame *frame);
+        enum AVPixelFormat hwaccel_pix_fmt;
+        enum AVPixelFormat hwaccel_retrieved_pix_fmt;
+#endif
 	};
 
 	/*
@@ -337,6 +361,10 @@ namespace ff{
 	int is_stream_pause(VideoState *is); //判断视频是否被暂停了
 
 	void video_refresh(VideoState *is, double *remaining_time);
+    
+    uint8_t* yuv420pToRgb(yuv420p * pyuv420p);
+    void freeRgb(void *pdata);
+
 	/*
 	跳到指定位置播放
 	*/
@@ -355,6 +383,8 @@ namespace ff{
 	*/
 	void refresh_loop_wait_event(VideoState *is, Event *event);
 	void do_exit(VideoState *is);
+    
+    void My_log(void* p,int inval,const char* fmt,...);
 }
 
 #endif

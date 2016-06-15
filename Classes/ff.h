@@ -3,6 +3,18 @@
 
 namespace ff
 {
+    enum VideoPixelFormat
+    {
+        VIDEO_PIX_RGB = 1,
+        VIDEO_PIX_YUV420P,
+    };
+    
+    typedef struct YUV420P{
+        int w,h;
+        unsigned char * data[3];
+        int linesize[3];
+    } YUV420P;
+    
 	class FFVideo
 	{
 	public:
@@ -39,8 +51,12 @@ namespace ff
 		 *	因此你可以直接用来作为材质使用
 		 */
 		void *refresh();
-
-		/*
+        
+        VideoPixelFormat getPixelFormat();
+        void *allocRgbBufferFormYuv420p(void *pyuv);
+        void freeRgbBuffer(void * prgb);
+        
+        /*
 		 *	网络预加载进度
 		 *	set_preload_nb,
 		 *	不设置使用默认值50
@@ -64,5 +80,9 @@ namespace ff
 		void* _ctx;
 		bool _first;
 	};
+	/*
+	* 取得视频文件的流信息
+	*/
+	int getVideoInfo(const char * filename, int *w, int *h);
 }
 #endif

@@ -518,7 +518,7 @@ namespace ff{
 		*/
 	void WM_SetCaption(const char *title, const char *icon);
 	void Quit(void);
-	char *GetError(void);
+	const char *GetError(void);
 	char *my_getenv(const char *name);
 
 	/*
