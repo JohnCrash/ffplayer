@@ -18,6 +18,7 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+#include "ffconfig.h"
 
 #include <string.h>
 #include <stdint.h>
@@ -25,11 +26,15 @@
 #include <errno.h>
 #include <math.h>
 
+#include "cmdutils_cxx.h"
+#include "ffmpeg_cxx.h"
+
 /* Include only the enabled headers since some compilers (namely, Sun
    Studio) will not omit unused inline functions and create undefined
    references to libraries that are not being built. */
-
-#include "ffconfig.h"
+#if __cplusplus
+extern "C" {
+#endif
 #include "compat/va_copy.h"
 #include "libavformat/avformat.h"
 #include "libavfilter/avfilter.h"
@@ -53,13 +58,16 @@
 #include "libavutil/cpu.h"
 #include "libavutil/ffversion.h"
 #include "libavutil/version.h"
-#include "cmdutils.h"
+
 #if CONFIG_NETWORK
 #include "libavformat/network.h"
 #endif
 #if HAVE_SYS_RESOURCE_H
 #include <sys/time.h>
 #include <sys/resource.h>
+#endif
+#if __cplusplus
+}
 #endif
 
 namespace ff
@@ -86,6 +94,11 @@ void uninit_opts(void)
     av_dict_free(&format_opts);
     av_dict_free(&codec_opts);
     av_dict_free(&resample_opts);
+	swr_opts = NULL;
+	sws_dict = NULL;
+	format_opts = NULL;
+	codec_opts = NULL;
+	resample_opts = NULL;
 }
 
 void log_callback_help(void *ptr, int level, const char *fmt, va_list vl)
@@ -110,10 +123,16 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
 }
 
 static void (*program_exit)(int ret);
+static void(*program_exit_cb)(int ret);
 
 void register_exit(void (*cb)(int ret))
 {
     program_exit = cb;
+}
+
+void register_exit_callback(void(*cb)(int ret))
+{
+	program_exit_cb = cb;
 }
 
 void exit_program(int ret)
@@ -121,7 +140,9 @@ void exit_program(int ret)
     if (program_exit)
         program_exit(ret);
 
-    exit(ret);
+	if (program_exit_cb)
+		program_exit_cb(ret);
+ //   exit(ret);
 }
 
 double parse_number_or_die(const char *context, const char *numstr, int type,
@@ -186,15 +207,15 @@ void show_help_options(const OptionDef *options, const char *msg, int req_flags,
     printf("\n");
 }
 
-void show_help_children(const AVClass *class, int flags)
+void show_help_children(const AVClass *_class, int flags)
 {
     const AVClass *child = NULL;
-    if (class->option) {
-        av_opt_show2(&class, NULL, flags, 0);
+    if (_class->option) {
+        av_opt_show2(&_class, NULL, flags, 0);
         printf("\n");
     }
 
-    while (child = av_opt_child_class_next(class, child))
+    while (child = av_opt_child_class_next(_class, child))
         show_help_children(child, flags);
 }
 
@@ -250,7 +271,7 @@ static void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
         buffsize += WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1,
                                         NULL, 0, NULL, NULL);
 
-    win32_argv_utf8 = av_mallocz(sizeof(char *) * (win32_argc + 1) + buffsize);
+    win32_argv_utf8 = (char**)av_mallocz(sizeof(char *) * (win32_argc + 1) + buffsize);
     argstr_flat     = (char *)win32_argv_utf8 + sizeof(char *) * (win32_argc + 1);
     if (!win32_argv_utf8) {
         LocalFree(argv_w);
@@ -286,12 +307,12 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
     int *dstcount;
 
     if (po->flags & OPT_SPEC) {
-        SpecifierOpt **so = dst;
-        char *p = strchr(opt, ':');
+		SpecifierOpt **so = (SpecifierOpt **)dst;
+        char *p = (char *)strchr(opt, ':');
         char *str;
 
         dstcount = (int *)(so + 1);
-        *so = grow_array(*so, sizeof(**so), dstcount, *dstcount + 1);
+		*so = (SpecifierOpt *)grow_array(*so, sizeof(**so), dstcount, *dstcount + 1);
         str = av_strdup(p ? p + 1 : "");
         if (!str)
             return AVERROR(ENOMEM);
@@ -319,9 +340,11 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
     } else if (po->u.func_arg) {
         int ret = po->u.func_arg(optctx, opt, arg);
         if (ret < 0) {
-            av_log(NULL, AV_LOG_ERROR,
-                   "Failed to set value '%s' for option '%s': %s\n",
-                   arg, opt, av_err2str(ret));
+			char buf[AV_ERROR_MAX_STRING_SIZE];
+			av_log(NULL, AV_LOG_ERROR,
+				"Failed to set value '%s' for option '%s': %s\n",
+				//arg, opt, av_err2str(ret));
+				arg,opt,av_make_error_string(buf, AV_ERROR_MAX_STRING_SIZE, ret));
             return ret;
         }
     }
@@ -371,7 +394,7 @@ void parse_options(void *optctx, int argc, char **argv, const OptionDef *options
     int optindex, handleoptions = 1, ret;
 
     /* perform system-dependent conversions for arguments list */
-    prepare_app_arguments(&argc, &argv);
+   // prepare_app_arguments(&argc, &argv);
 
     /* parse options */
     optindex = 1;
@@ -458,7 +481,7 @@ static void dump_argument(const char *a)
 {
     const unsigned char *p;
 
-    for (p = a; *p; p++)
+	for (p = (const unsigned char *)a; *p; p++)
         if (!((*p >= '+' && *p <= ':') || (*p >= '@' && *p <= 'Z') ||
               *p == '_' || (*p >= 'a' && *p <= 'z')))
             break;
@@ -467,7 +490,7 @@ static void dump_argument(const char *a)
         return;
     }
     fputc('"', report_file);
-    for (p = a; *p; p++) {
+	for (p = (const unsigned char *)a; *p; p++) {
         if (*p == '\\' || *p == '"' || *p == '$' || *p == '`')
             fprintf(report_file, "\\%c", *p);
         else if (*p < ' ' || *p > '~')
@@ -649,7 +672,7 @@ static void finish_group(OptionParseContext *octx, int group_idx,
     OptionGroupList *l = &octx->groups[group_idx];
     OptionGroup *g;
 
-    GROW_ARRAY(l->groups, l->nb_groups);
+	GROW_ARRAY(l->groups, l->nb_groups, OptionGroup*);
     g = &l->groups[l->nb_groups - 1];
 
     *g             = octx->cur_group;
@@ -680,7 +703,7 @@ static void add_opt(OptionParseContext *octx, const OptionDef *opt,
     int global = !(opt->flags & (OPT_PERFILE | OPT_SPEC | OPT_OFFSET));
     OptionGroup *g = global ? &octx->global_opts : &octx->cur_group;
 
-    GROW_ARRAY(g->opts, g->nb_opts);
+    GROW_ARRAY(g->opts, g->nb_opts,Option*);
     g->opts[g->nb_opts - 1].opt = opt;
     g->opts[g->nb_opts - 1].key = key;
     g->opts[g->nb_opts - 1].val = val;
@@ -695,7 +718,7 @@ static void init_parse_context(OptionParseContext *octx,
     memset(octx, 0, sizeof(*octx));
 
     octx->nb_groups = nb_groups;
-    octx->groups    = av_mallocz_array(octx->nb_groups, sizeof(*octx->groups));
+	octx->groups = (OptionGroupList *)av_mallocz_array(octx->nb_groups, sizeof(*octx->groups));
     if (!octx->groups)
         exit_program(1);
 
@@ -742,7 +765,7 @@ int split_commandline(OptionParseContext *octx, int argc, char *argv[],
     int dashdash = -2;
 
     /* perform system-dependent conversions for arguments list */
-    prepare_app_arguments(&argc, &argv);
+    // prepare_app_arguments(&argc, &argv);
 
     init_parse_context(octx, groups, nb_groups);
     av_log(NULL, AV_LOG_DEBUG, "Splitting the commandline.\n");
@@ -871,7 +894,7 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
     int i;
 
     flags = av_log_get_flags();
-    tail = strstr(arg, "repeat");
+    tail = (char*)strstr(arg, "repeat");
     if (tail)
         flags &= ~AV_LOG_SKIP_REPEATED;
     else
@@ -902,14 +925,14 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
-static void expand_filename_template(AVBPrint *bp, const char *template,
+static void expand_filename_template(AVBPrint *bp, const char *_template,
                                      struct tm *tm)
 {
     int c;
 
-    while ((c = *(template++))) {
+	while ((c = *(_template++))) {
         if (c == '%') {
-            if (!(c = *(template++)))
+			if (!(c = *(_template++)))
                 break;
             switch (c) {
             case 'p':
@@ -946,10 +969,12 @@ static int init_report(const char *env)
 
     while (env && *env) {
         if ((ret = av_opt_get_key_value(&env, "=", ":", 0, &key, &val)) < 0) {
-            if (count)
-                av_log(NULL, AV_LOG_ERROR,
-                       "Failed to parse FFREPORT environment variable: %s\n",
-                       av_err2str(ret));
+			if (count){
+				char buf[AV_ERROR_MAX_STRING_SIZE];
+				av_log(NULL, AV_LOG_ERROR,
+					"Failed to parse FFREPORT environment variable: %s\n",
+					av_make_error_string(buf, AV_ERROR_MAX_STRING_SIZE, ret));
+			}
             break;
         }
         if (*env)
@@ -975,7 +1000,7 @@ static int init_report(const char *env)
 
     av_bprint_init(&filename, 0, 1);
     expand_filename_template(&filename,
-                             av_x_if_null(filename_template, "%p-%t.log"), tm);
+                             (char*)av_x_if_null(filename_template, "%p-%t.log"), tm);
     av_free(filename_template);
     if (!av_bprint_is_complete(&filename)) {
         av_log(NULL, AV_LOG_ERROR, "Out of memory building report file name\n");
@@ -1086,10 +1111,10 @@ static void print_all_libs_info(int flags, int level)
     PRINT_LIB_INFO(avformat,   AVFORMAT,   flags, level);
     PRINT_LIB_INFO(avdevice,   AVDEVICE,   flags, level);
     PRINT_LIB_INFO(avfilter,   AVFILTER,   flags, level);
-    PRINT_LIB_INFO(avresample, AVRESAMPLE, flags, level);
+//    PRINT_LIB_INFO(avresample, AVRESAMPLE, flags, level);
     PRINT_LIB_INFO(swscale,    SWSCALE,    flags, level);
     PRINT_LIB_INFO(swresample, SWRESAMPLE, flags, level);
-    PRINT_LIB_INFO(postproc,   POSTPROC,   flags, level);
+//    PRINT_LIB_INFO(postproc,   POSTPROC,   flags, level);
 }
 
 static void print_program_info(int flags, int level)
@@ -1422,8 +1447,8 @@ static const AVCodec *next_codec_for_id(enum AVCodecID id, const AVCodec *prev,
 
 static int compare_codec_desc(const void *a, const void *b)
 {
-    const AVCodecDescriptor * const *da = a;
-    const AVCodecDescriptor * const *db = b;
+	const AVCodecDescriptor * const *da = (const AVCodecDescriptor * const *)a;
+	const AVCodecDescriptor * const *db = (const AVCodecDescriptor * const *)b;
 
     return (*da)->type != (*db)->type ? FFDIFFSIGN((*da)->type, (*db)->type) :
            strcmp((*da)->name, (*db)->name);
@@ -1437,7 +1462,7 @@ static unsigned get_codecs_sorted(const AVCodecDescriptor ***rcodecs)
 
     while ((desc = avcodec_descriptor_next(desc)))
         nb_codecs++;
-    if (!(codecs = av_calloc(nb_codecs, sizeof(*codecs)))) {
+	if (!(codecs = (const AVCodecDescriptor **)av_calloc(nb_codecs, sizeof(*codecs)))) {
         av_log(NULL, AV_LOG_ERROR, "Out of memory\n");
         exit_program(1);
     }
@@ -1720,7 +1745,7 @@ int show_sample_fmts(void *optctx, const char *opt, const char *arg)
     int i;
     char fmt_str[128];
     for (i = -1; i < AV_SAMPLE_FMT_NB; i++)
-        printf("%s\n", av_get_sample_fmt_string(fmt_str, sizeof(fmt_str), i));
+		printf("%s\n", av_get_sample_fmt_string(fmt_str, sizeof(fmt_str), (AVSampleFormat)i));
     return 0;
 }
 
@@ -2034,7 +2059,7 @@ AVDictionary **setup_find_stream_info_opts(AVFormatContext *s,
 
     if (!s->nb_streams)
         return NULL;
-    opts = av_mallocz_array(s->nb_streams, sizeof(*opts));
+	opts = (AVDictionary **)av_mallocz_array(s->nb_streams, sizeof(*opts));
     if (!opts) {
         av_log(NULL, AV_LOG_ERROR,
                "Could not alloc memory for stream options.\n");
@@ -2053,7 +2078,7 @@ void *grow_array(void *array, int elem_size, int *size, int new_size)
         exit_program(1);
     }
     if (*size < new_size) {
-        uint8_t *tmp = av_realloc_array(array, new_size, elem_size);
+		uint8_t *tmp = (uint8_t *)av_realloc_array(array, new_size, elem_size);
         if (!tmp) {
             av_log(NULL, AV_LOG_ERROR, "Could not alloc buffer.\n");
             exit_program(1);

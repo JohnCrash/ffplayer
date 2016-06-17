@@ -557,16 +557,6 @@ namespace ff{
 		AudioFormat src_fmt, Uint8 src_channels, int src_rate,
 		AudioFormat dst_fmt, Uint8 dst_channels, int dst_rate);
 
-	AudioDeviceID OpenAudioDevice(const char
-		*device,
-		int iscapture,
-		const
-		AudioSpec *
-		desired,
-		AudioSpec *
-		obtained,
-		int
-		allowed_changes);
 	/*
 		SDL Event
 		*/

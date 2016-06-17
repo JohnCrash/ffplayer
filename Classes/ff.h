@@ -80,9 +80,24 @@ namespace ff
 		void* _ctx;
 		bool _first;
 	};
+	
 	/*
 	* 取得视频文件的流信息
 	*/
 	int getVideoInfo(const char * filename, int *w, int *h);
+
+	enum TranCode
+	{
+		TC_BEGIN = 1,	//开始转码
+		TC_END = 2,		//结束转码
+		TC_PROGRESS = 3,//转码进度
+		TC_ERROR = 4,	//转码错误
+	};
+	/*
+	 * 执行ffmpeg命令
+	 * 回调函数用来通知转码进度，tc表示状态，p是进度值0-1
+	 * 回调返回0继续转码，非0将终止转码
+	 */
+	int ffmpeg(const char *cmd,int (*)(TranCode tc,float p));
 }
 #endif

@@ -38,8 +38,24 @@ namespace ff
 		close();
 	}
 
+	static int sptc(TranCode t, float p)
+	{
+		if (t == TC_PROGRESS)
+			CCLOG("PROGRESS %d%%", (int)(p * 100));
+		else if (t == TC_BEGIN)
+			CCLOG("TC_BEGIN");
+		else if (t==TC_END)
+			CCLOG("TC_END");
+		else if (t==TC_ERROR)
+			CCLOG("TC_ERROR");
+		if (p > 0.1)return -1;
+		return 0;
+	}
+
 	bool FFVideo::open(const char *url)
 	{
+		//test
+		ffmpeg("ffmpeg -i g:\\1.mpg -b 1048k g:\\o2.mpg",sptc);
 		_first = true;
 		close();
         _ctx = stream_open(url, NULL);
@@ -91,11 +107,8 @@ namespace ff
 		VideoState* is = (VideoState*)_ctx;
 		if (is)
 		{
-		//	return FFMAX(is->videoq.nb_packets,is->audioq.nb_packets);
-			if (is->video_st)
-				return is->videoq.nb_packets;
-			else if (is->audio_st)
-				return is->audioq.nb_packets;
+			
+			return FFMAX(is->videoq.nb_packets,is->audioq.nb_packets);
 		}
 		return -1;
 	}
@@ -347,11 +360,7 @@ namespace ff
 		VideoState* is = (VideoState*)_ctx;
 		if (is)
 		{
-			//return FFMAX(calc_stream_preload_time(&is->videoq,is->video_st),calc_stream_preload_time(&is->audioq,is->audio_st));
-			if (is->video_st)
-				return calc_stream_preload_time(&is->videoq, is->video_st);
-			else if (is->audio_st)
-				return calc_stream_preload_time(&is->audioq, is->audio_st);
+			return FFMAX(calc_stream_preload_time(&is->videoq,is->video_st),calc_stream_preload_time(&is->audioq,is->audio_st));
 		}
 		return -1;
 	}

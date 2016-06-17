@@ -717,15 +717,6 @@ namespace ff{
 		return ((id == 0) ? -1 : 0);
 	}
 
-	AudioDeviceID
-		OpenAudioDevice(const char *device, int iscapture,
-		const AudioSpec * desired, AudioSpec * obtained,
-		int allowed_changes)
-	{
-			return open_audio_device(device, iscapture, desired, obtained,
-				allowed_changes, 2);
-	}
-
 	/*
 		SDL_CloseAudio
 	*/

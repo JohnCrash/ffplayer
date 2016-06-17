@@ -2,6 +2,7 @@
 	ª˘”⁄ffmpeg¿˝◊”≤•∑≈∆˜ffplay
 */
 #include "ffdepends.h"
+#include "cmdutils_cxx.h"
 #include "ff.h"
 
 #include "cocos2d.h"
@@ -60,9 +61,9 @@ int64_t audio_callback_time;
 
 AVPacket flush_pkt;
 
-SwsContext *sws_opts;
-AVDictionary *swr_opts, *sws_dict;
-AVDictionary *format_opts, *codec_opts, *resample_opts;
+//SwsContext *sws_opts;
+//AVDictionary *swr_opts, *sws_dict;
+//AVDictionary *format_opts, *codec_opts, *resample_opts;
 
 int CCLog(const char *pszFmt, ...)
 {
@@ -119,6 +120,7 @@ int64_t get_valid_channel_layout(int64_t channel_layout, int channels)
 		return 0;
 }
 
+#if 0
 void print_error(const char *filename, int err)
 {
 	char errbuf[128];
@@ -128,6 +130,7 @@ void print_error(const char *filename, int err)
 		errbuf_ptr = strerror(AVUNERROR(err));
 	My_log(NULL, AV_LOG_ERROR, "%s: %s\n", filename, errbuf_ptr);
 }
+#endif
 
 void do_exit(VideoState *is)
 {
@@ -2735,94 +2738,6 @@ static int subtitle_thread(void *arg){
 	return 0;
 }
 
-//FIXME imporment it
-int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
-{
-	int ret = avformat_match_stream_specifier(s, st, spec);
-	if (ret < 0)
-		My_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
-	return ret;
-}
-
-AVDictionary *filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id,
-	AVFormatContext *s, AVStream *st, AVCodec *codec)
-{
-	AVDictionary    *ret = NULL;
-	AVDictionaryEntry *t = NULL;
-	int            flags = s->oformat ? AV_OPT_FLAG_ENCODING_PARAM
-		: AV_OPT_FLAG_DECODING_PARAM;
-	char          prefix = 0;
-	const AVClass    *cc = avcodec_get_class();
-
-	if (!codec)
-		codec = s->oformat ? avcodec_find_encoder(codec_id)
-		: avcodec_find_decoder(codec_id);
-
-	switch (st->codec->codec_type) {
-	case AVMEDIA_TYPE_VIDEO:
-		prefix = 'v';
-		flags |= AV_OPT_FLAG_VIDEO_PARAM;
-		break;
-	case AVMEDIA_TYPE_AUDIO:
-		prefix = 'a';
-		flags |= AV_OPT_FLAG_AUDIO_PARAM;
-		break;
-	case AVMEDIA_TYPE_SUBTITLE:
-		prefix = 's';
-		flags |= AV_OPT_FLAG_SUBTITLE_PARAM;
-		break;
-	}
-
-	while (t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX)) {
-		char *p = strchr(t->key, ':');
-
-		/* check stream specification in opt name */
-		if (p)
-			switch (check_stream_specifier(s, st, p + 1)) {
-			case  1: *p = 0; break;
-			case  0:         continue;
-			default:         do_exit(NULL);
-		}
-
-		if (av_opt_find(&cc, t->key, NULL, flags, AV_OPT_SEARCH_FAKE_OBJ) ||
-			!codec ||
-			(codec->priv_class &&
-			av_opt_find(&codec->priv_class, t->key, NULL, flags,
-			AV_OPT_SEARCH_FAKE_OBJ)))
-			av_dict_set(&ret, t->key, t->value, 0);
-		else if (t->key[0] == prefix &&
-			av_opt_find(&cc, t->key + 1, NULL, flags,
-			AV_OPT_SEARCH_FAKE_OBJ))
-			av_dict_set(&ret, t->key + 1, t->value, 0);
-
-		if (p)
-			*p = ':';
-	}
-	return ret;
-
-}
-
-//FIXME imporment it
-AVDictionary **setup_find_stream_info_opts(AVFormatContext *s,
-	AVDictionary *codec_opts)
-{
-	int i;
-	AVDictionary **opts;
-
-	if (!s->nb_streams)
-		return NULL;
-	opts = (AVDictionary **)av_mallocz_array(s->nb_streams, sizeof(*opts));
-	if (!opts) {
-		My_log(NULL, AV_LOG_ERROR,
-			"Could not alloc memory for stream options.\n");
-		return NULL;
-	}
-	for (i = 0; i < (int)s->nb_streams; i++)
-		opts[i] = filter_codec_opts(codec_opts, s->streams[i]->codec->codec_id,
-		s, s->streams[i], NULL);
-	return opts;
-}
-
 #if CONFIG_VIDEOTOOLBOX
 
 const HWAccel hwaccels[] = {
@@ -3080,7 +2995,7 @@ void step_to_next_frame(VideoState *is)
 	is->step = 1;
 }
 
-static int64_t last_read_pts = 0;
+//static int64_t last_read_pts = 0;
 static void avlog(void * l,int level,const char *fmt,va_list vl)
 {
 	char buf[1024];
@@ -3419,20 +3334,20 @@ static int read_thread(void *arg)
 			is->eof = 0;
 			is->audioq.eof = 0;
 		}
-		if (pkt->stream_index == is->audio_stream){
-			if (last_read_pts == 0){
-				last_read_pts = pkt->pts;
+		//if (pkt->stream_index == is->audio_stream){
+		//	if (last_read_pts == 0){
+		//		last_read_pts = pkt->pts;
 		//		AllocConsole();
 		//		freopen("CONIN$", "r", stdin);
 		//		freopen("CONOUT$", "w", stdout);
 		//		freopen("CONOUT$", "w", stderr);
-			}
-			if (pkt->pts - last_read_pts>2100)
-				My_log(0, 0, "1read_thread pts = %I64d,read_thread_diff= %I64d",pkt->pts,pkt->pts-last_read_pts);
-			else
-				My_log(0, 0, "2read_thread pts = %I64d,read_thread_diff= %I64d", pkt->pts, pkt->pts - last_read_pts);
-			last_read_pts = pkt->pts;
-		}
+		//	}
+			//if (pkt->pts - last_read_pts>2100)
+			//	My_log(0, 0, "1read_thread pts = %I64d,read_thread_diff= %I64d",pkt->pts,pkt->pts-last_read_pts);
+			//else
+			//	My_log(0, 0, "2read_thread pts = %I64d,read_thread_diff= %I64d", pkt->pts, pkt->pts - last_read_pts);
+		//	last_read_pts = pkt->pts;
+		//}
 
 		/* check if packet is in play range specified by user, then queue, otherwise discard */
 		stream_start_time = ic->streams[pkt->stream_index]->start_time;
@@ -3737,7 +3652,7 @@ void initFF()
 	av_init_packet(&flush_pkt);
 	flush_pkt.data = (uint8_t *)&flush_pkt;
 
-	av_log_set_callback(avlog);
+	//av_log_set_callback(avlog);
 }
 /*
 * 取得视频文件的流信息
