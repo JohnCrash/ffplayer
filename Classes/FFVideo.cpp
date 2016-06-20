@@ -38,24 +38,8 @@ namespace ff
 		close();
 	}
 
-	static int sptc(TranCode t, float p)
-	{
-		if (t == TC_PROGRESS)
-			CCLOG("PROGRESS %d%%", (int)(p * 100));
-		else if (t == TC_BEGIN)
-			CCLOG("TC_BEGIN");
-		else if (t==TC_END)
-			CCLOG("TC_END");
-		else if (t==TC_ERROR)
-			CCLOG("TC_ERROR");
-		if (p > 0.1)return -1;
-		return 0;
-	}
-
 	bool FFVideo::open(const char *url)
 	{
-		//test
-		ffmpeg("ffmpeg -i g:\\1.mpg -b 1048k g:\\o2.mpg",sptc);
 		_first = true;
 		close();
         _ctx = stream_open(url, NULL);

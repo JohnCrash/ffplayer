@@ -980,6 +980,22 @@ static void do_subtitle_out(AVFormatContext *s,
     }
 }
 
+static inline av_const int mid_pred_2(int a, int b, int c)
+{
+    if(a>b){
+        if(c>b){
+            if(c>a) b=a;
+            else    b=c;
+        }
+    }else{
+        if(b>c){
+            if(c>a) b=c;
+            else    b=a;
+        }
+    }
+    return b;
+}
+
 static void do_video_out(AVFormatContext *s,
                          OutputStream *ost,
                          AVFrame *next_picture,
@@ -1016,7 +1032,7 @@ static void do_video_out(AVFormatContext *s,
 
     if (!next_picture) {
         //end, flushing
-        nb0_frames = nb_frames = mid_pred(ost->last_nb0_frames[0],
+        nb0_frames = nb_frames = mid_pred_2(ost->last_nb0_frames[0],
                                           ost->last_nb0_frames[1],
                                           ost->last_nb0_frames[2]);
     } else {
@@ -1026,7 +1042,7 @@ static void do_video_out(AVFormatContext *s,
         /* by default, we output a single frame */
         nb0_frames = 0; // tracks the number of times the PREVIOUS frame should be duplicated, mostly for variable framerate (VFR)
         nb_frames = 1;
-
+		
         format_video_sync = video_sync_method;
         if (format_video_sync == VSYNC_AUTO) {
             if(!strcmp(s->oformat->name, "avi")) {
@@ -1367,7 +1383,6 @@ static int reap_filters(int flush)
 {
     AVFrame *filtered_frame = NULL;
     int i;
-
     /* Reap all buffers present in the buffer sinks */
     for (i = 0; i < nb_output_streams; i++) {
         OutputStream *ost = output_streams[i];
@@ -1457,7 +1472,6 @@ static int reap_filters(int flush)
             av_frame_unref(filtered_frame);
         }
     }
-
     return 0;
 }
 
@@ -3678,7 +3692,7 @@ static int check_keyboard_interaction(int64_t cur_time)
 #if HAVE_PTHREADS
 static void *input_thread(void *arg)
 {
-    InputFile *f = arg;
+	InputFile *f = (InputFile *)arg;
     unsigned flags = f->non_blocking ? AV_THREAD_MESSAGE_NONBLOCK : 0;
     int ret = 0;
 
@@ -3704,10 +3718,12 @@ static void *input_thread(void *arg)
                    f->thread_queue_size);
         }
         if (ret < 0) {
-            if (ret != AVERROR_EOF)
-                av_log(f->ctx, AV_LOG_ERROR,
-                       "Unable to send packet to main thread: %s\n",
-                       av_err2str(ret));
+			if (ret != AVERROR_EOF){
+				char buf[AV_ERROR_MAX_STRING_SIZE];
+				av_log(f->ctx, AV_LOG_ERROR,
+					"Unable to send packet to main thread: %s\n",
+					av_make_error_string(buf,AV_ERROR_MAX_STRING_SIZE,ret));
+			}
             av_packet_unref(&pkt);
             av_thread_message_queue_set_err_recv(f->in_thread_queue, ret);
             break;
@@ -4242,7 +4258,7 @@ static int transcode_step(void)
         av_assert0(ost->source_index >= 0);
         ist = input_streams[ost->source_index];
     }
-
+	
     ret = process_input(ist->file_index);
     if (ret == AVERROR(EAGAIN)) {
         if (input_files[ist->file_index]->eagain)
@@ -4254,6 +4270,7 @@ static int transcode_step(void)
         return ret == AVERROR_EOF ? 0 : ret;
 
     return reap_filters(0);
+	return 0;
 }
 
 static int (* _tcp)(int m,float p) = NULL;
@@ -4276,6 +4293,7 @@ static int transcode(void)
     int64_t total_packets_written = 0;
 
     ret = transcode_init();
+	
     if (ret < 0)
         goto fail;
 
@@ -4331,6 +4349,7 @@ static int transcode(void)
 			if( _tcp(3,c) )break;
 		}
     }
+
 #if HAVE_PTHREADS
     free_input_threads();
 #endif
@@ -4358,7 +4377,7 @@ static int transcode(void)
 			}
         }
     }
-
+	
     /* dump report by using the first video and audio streams */
     print_report(1, timer_start, av_gettime_relative());
 
@@ -4391,12 +4410,10 @@ static int transcode(void)
 
     /* finished ! */
     ret = 0;
-
  fail:
 #if HAVE_PTHREADS
     free_input_threads();
-#endif
-
+#endif	
     if (output_streams) {
         for (i = 0; i < nb_output_streams; i++) {
             ost = output_streams[i];
@@ -4521,7 +4538,6 @@ int ffmpeg_main(int argc, char **argv)
 	show_banner(argc, argv, options);
 
 	term_init();
-
 	/* parse options and open all input/output files */
 	ret = ffmpeg_parse_options(argc, argv);
 	if (ret < 0){

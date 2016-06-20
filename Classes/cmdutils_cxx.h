@@ -579,7 +579,7 @@ namespace ff
 
 #define GET_SAMPLE_RATE_NAME(rate)\
 	char name[16]; \
-	_snprintf(name, sizeof(name), "%d", rate);
+	snprintf(name, sizeof(name), "%d", rate);
 
 #define GET_CH_LAYOUT_NAME(ch_layout)\
 	char name[16]; \
