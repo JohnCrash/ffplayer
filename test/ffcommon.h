@@ -6,7 +6,7 @@
 #include <thread>
 
 #define inline __inline
-#include "config.h"
+#include "ffconfig.h"
 #define HAVE_STRUCT_POLLFD 1
 #define snprintf _snprintf
 extern "C"

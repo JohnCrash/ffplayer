@@ -20,6 +20,7 @@ struct AVRaw
 	int ref;
 	int size;
 	int seek_sample;
+	int recount;
 	AVRawType type;
 	AVRaw *next;
 };

@@ -48,7 +48,7 @@ struct AVEncodeContext
  *
  */
 AVEncodeContext* ffCreateEncodeContext( 
-	const char* filename,
+	const char* filename,const char *fmt,
 	int w, int h, AVRational frameRate, int videoBitRate, AVCodecID video_codec_id,
 	int sampleRate, int audioBitRate, AVCodecID audio_codec_id,AVDictionary * opt_arg);
 
@@ -73,6 +73,7 @@ void ffCloseEncodeContext( AVEncodeContext *pec);
  * 加入音频帧或者视频帧
  */
 int ffAddFrame(AVEncodeContext *pec,AVRaw *praw);
+
 
 /*
  * 取缓冲大小,单位kb

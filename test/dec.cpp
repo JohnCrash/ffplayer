@@ -420,7 +420,7 @@ int read_trancode(const char *filename, const char *outfile)
 	AVRational rat;
 	rat.num = 18;
 	rat.den = 1;
-	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.mp4",
+	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.mp4",NULL,
 		w, h, rat, 100000, w == 0 ? AV_CODEC_ID_NONE : AV_CODEC_ID_MPEG4,
 		sample_rate, 64000, sample_rate==0? AV_CODEC_ID_NONE: AV_CODEC_ID_AAC, opt);
 

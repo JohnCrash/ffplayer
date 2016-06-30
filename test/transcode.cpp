@@ -152,7 +152,7 @@ int ffTranscode(const char *input, const char *output,
 			total = 0;
 		i = 1;
 
-		pec = ffCreateEncodeContext(output, w, h, ffGetFrameRate(pdc), bitRate, video_id, sampleRate, audioBitRate, audio_id, opt);
+		pec = ffCreateEncodeContext(output,NULL, w, h, ffGetFrameRate(pdc), bitRate, video_id, sampleRate, audioBitRate, audio_id, opt);
 		if (pec)
 		{
 			/*

@@ -40,6 +40,7 @@ AVRaw *make_image_raw(int format, int w, int h)
 			break;
 		}
 		praw->size = ret;
+		praw->recount = 1;
 		return praw;
 	}
 
@@ -114,12 +115,12 @@ int release_raw(AVRaw * praw)
 {
 	if (praw)
 	{
+		praw->ref--;
 		if (praw->ref <= 0)
 		{
 			ffFreeRaw(praw);
 			return -1;
 		}
-		praw->ref--;
 		return praw->ref;
 	}
 	else

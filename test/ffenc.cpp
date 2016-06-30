@@ -95,12 +95,18 @@ static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
 		/* 分辨率必须是2的倍数，这里需要作检查 */
 		c->width = w;
 		c->height = h;
-		st->time_base.den = stream_frame_rate.num;
-		st->time_base.num = stream_frame_rate.den;
-		c->time_base = st->time_base;
+		//st->time_base.den = stream_frame_rate.num;
+		//st->time_base.num = stream_frame_rate.den;
+		
+		st->avg_frame_rate = stream_frame_rate;
 
-		c->gop_size = 12; /* emit one intra frame every twelve frames at most */
-		c->pix_fmt = STREAM_PIX_FMT;
+		c->time_base = av_inv_q(stream_frame_rate);
+		c->sample_aspect_ratio = {0,1};
+		//c->ticks_per_frame = 2;
+
+		//c->gop_size = 12; /* emit one intra frame every twelve frames at most */
+		//c->pix_fmt = STREAM_PIX_FMT;
+		c->pix_fmt = AV_PIX_FMT_YUV420P;
 		if (c->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
 			/* just for testing, we also add B frames */
 			c->max_b_frames = 2;
@@ -347,6 +353,21 @@ static int getAVRawSizeKB(AVRaw *praw)
 	return 0;
 }
 
+void list_push_raw(AVRaw ** head, AVRaw ** tail, AVRaw *praw)
+{
+	retain_raw(praw);
+	if (!*head)
+	{
+		*head = praw;
+		*tail = praw;
+	}
+	else
+	{
+		(*tail)->next = praw;
+		*tail = praw;
+	}
+}
+
 AVRaw * list_pop_raw(AVRaw ** head, AVRaw **tail)
 {
 	AVRaw * praw = NULL;
@@ -359,10 +380,7 @@ AVRaw * list_pop_raw(AVRaw ** head, AVRaw **tail)
 			*tail = *head;
 		}
 	}
-	if (release_raw(praw) < 0)
-		return NULL;
-	else
-		return praw;
+	return praw;
 }
 
 void ffFlush(AVEncodeContext *pec)
@@ -516,59 +534,60 @@ static int write_video_frame(AVEncodeContext * pec, AVRaw *praw)
 
 	c = pec->_video_st->codec;
 	st = pec->_video_st;
-
-	frame = make_video_frame(&pec->_vctx,praw);
 	
-	if (!frame)
-	{
-		return -1;
-	}
-	if (pec->_ctx->oformat->flags & AVFMT_RAWPICTURE) {
-		/* a hack to avoid data copy with some raw video muxers */
-		AVPacket pkt;
-		av_init_packet(&pkt);
+	for (int i = 0; i < praw->recount; i++){
+		frame = make_video_frame(&pec->_vctx, praw);
 
 		if (!frame)
-			return 1;
+		{
+			return -1;
+		}
+		if (pec->_ctx->oformat->flags & AVFMT_RAWPICTURE) {
+			/* a hack to avoid data copy with some raw video muxers */
+			AVPacket pkt;
+			av_init_packet(&pkt);
 
-		pkt.flags |= AV_PKT_FLAG_KEY;
-		pkt.stream_index = st->index;
-		pkt.data = (uint8_t *)frame;
-		pkt.size = sizeof(AVPicture);
+			if (!frame)
+				return -1;
 
-		pkt.pts = pkt.dts = frame->pts;
-		av_packet_rescale_ts(&pkt, c->time_base, st->time_base);
+			pkt.flags |= AV_PKT_FLAG_KEY;
+			pkt.stream_index = st->index;
+			pkt.data = (uint8_t *)frame;
+			pkt.size = sizeof(AVPicture);
 
-		ret = av_interleaved_write_frame(pec->_ctx, &pkt);
-	}
-	else {
-		AVPacket pkt = { 0 };
-		av_init_packet(&pkt);
+			pkt.pts = pkt.dts = frame->pts;
+			av_packet_rescale_ts(&pkt, c->time_base, st->time_base);
 
-		/* encode the image */
-		ret = avcodec_encode_video2(c, &pkt, frame, &got_packet);
+			ret = av_interleaved_write_frame(pec->_ctx, &pkt);
+		}
+		else {
+			AVPacket pkt = { 0 };
+			av_init_packet(&pkt);
+
+			/* encode the image */
+			ret = avcodec_encode_video2(c, &pkt, frame, &got_packet);
+			if (ret < 0) {
+				char errmsg[ERROR_BUFFER_SIZE];
+				av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
+				ffLog("Error encoding video frame: %s\n", errmsg);
+				return -1;
+			}
+
+			if (got_packet) {
+				ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+			}
+			else {
+				ret = 0;
+			}
+		}
+
 		if (ret < 0) {
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("Error encoding video frame: %s\n", errmsg);
+			ffLog("Error while writing video frame: %s\n", errmsg);
 			return -1;
 		}
-
-		if (got_packet) {
-			ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
-		}
-		else {
-			ret = 0;
-		}
 	}
-
-	if (ret < 0) {
-		char errmsg[ERROR_BUFFER_SIZE];
-		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-		ffLog("Error while writing video frame: %s\n", errmsg);
-		return -1;
-	}
-
 	return (frame || got_packet) ? 0 : 1;
 }
 
@@ -681,13 +700,54 @@ static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
 	return (frame || got_packet) ? 0 : 1;
 }
 
+static void write_delay_frame(AVEncodeContext *pec)
+{
+	int ret;
+	AVCodecContext *c;
+	AVStream * st;
+	int got_packet = 1;
+
+	if (pec->has_audio && pec->_audio_st){
+		c = pec->_audio_st->codec;
+		st = pec->_audio_st;
+		while (got_packet){
+			AVPacket pkt = { 0 };
+			av_init_packet(&pkt);
+
+			ret = avcodec_encode_audio2(c, &pkt, NULL, &got_packet);
+			if (ret < 0){
+				break;
+			}
+			if (got_packet){
+				ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+			}
+		}
+	}
+
+	if (pec->has_video && pec->_video_st){
+		c = pec->_video_st->codec;
+		st = pec->_video_st;
+		while (got_packet){
+			AVPacket pkt = { 0 };
+			av_init_packet(&pkt);
+
+			ret = avcodec_encode_video2(c, &pkt, NULL, &got_packet);
+			if (ret < 0){
+				break;
+			}
+			if (got_packet){
+				ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+			}
+		}
+	}
+}
+
 /*
  * 编码写入线程
  */
 int encode_thread_proc(AVEncodeContext * pec)
 {
 	int ret;
-	int total_frame = 0;
 
 	while (!pec->_stop_thread)
 	{
@@ -695,7 +755,6 @@ int encode_thread_proc(AVEncodeContext * pec)
 		/*
 		 * 压缩原生数据并写入到文件中
 		 */
-		total_frame++;
 		if (praw)
 		{
 			if (praw->type == RAW_IMAGE)
@@ -721,26 +780,27 @@ int encode_thread_proc(AVEncodeContext * pec)
 				ffLog("Unknow raw type.\n");
 				break;
 			}
+
 			release_raw(praw);
 		}
 		else
 		{
 			/*
 			 * 如果返回NULL表示已经没有数据了。
+			 * 写入延时帧
 			 */
+			write_delay_frame(pec);
 			break;
 		}
-		printf("buffer : %d, %.2f mb\n",pec->_nb_raws,pec->_buffer_size/1024.0);
 	}
 	pec->_stop_thread = 1;
-	printf("write total frame : %d \n",total_frame);
 	return 0;
 }
 
 /**
  * 创建编码上下文
  */
-AVEncodeContext* ffCreateEncodeContext(const char* filename, 
+AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 	int w, int h, AVRational frameRate, int videoBitRate, AVCodecID video_codec_id,
 	int sampleRate, int audioBitRate, AVCodecID audio_codec_id, AVDictionary * opt_arg)
 {
@@ -762,7 +822,7 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename,
 	/*
 	 * 创建输出上下文
 	 */
-	avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, filename);
+	avformat_alloc_output_context2(&ofmt_ctx, NULL, fmt, filename);
 	if (!ofmt_ctx){
 		ffLog("avformat_alloc_output_context2 return failed.");
 		ffCloseEncodeContext(pec);
@@ -922,21 +982,6 @@ int ffGetBufferSizeKB(AVEncodeContext *pec)
 int ffGetBufferSize(AVEncodeContext *pec)
 {
 	return pec->_nb_raws;
-}
-
-void list_push_raw(AVRaw ** head, AVRaw ** tail,AVRaw *praw)
-{
-	retain_raw(praw);
-	if (!*head)
-	{
-		*head = praw;
-		*tail = praw;
-	}
-	else
-	{
-		(*tail)->next = praw;
-		*tail = praw;
-	}
 }
 
 int ffAddFrame(AVEncodeContext *pec, AVRaw *praw)

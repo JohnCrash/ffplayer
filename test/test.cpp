@@ -86,6 +86,7 @@ static void progress(int64_t t, int64_t i)
 
 int _tmain(int argc, _TCHAR* argv[])
 {
+#if 1
 	AVDictionary * opt = NULL;
 	int i, j;
 	int w, h;
@@ -97,14 +98,15 @@ int _tmain(int argc, _TCHAR* argv[])
 	/*
 	 * 测试转码
 	 */
-	int ret = ffTranscode("g:\\1.mpg", "g:\\transcode_1_mpg.mp4", 
-		AV_CODEC_ID_MPEG4, 1, 1,2000*1000,
+	/*
+	int ret = ffTranscode("g:\\test_video\\vfwcap.mp4", "g:\\test_video\\transcode_1_mpg.mp4", 
+		AV_CODEC_ID_H264, 1, 1,2000*1000,
 		AV_CODEC_ID_AAC, 64 * 1000, progress);
 	if (ret<0)
 	{
 		printf("ffTranscode error: %s \n",ffLastError());
 	}
-	/*
+	*/
 	av_dict_set(&opt, "strict", "-2",0); //aac 编码器是实验性质的需要strict -2参数
 	av_dict_set(&opt, "threads", "4", 0); //可以启用多线程压缩
 
@@ -127,7 +129,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	{
 		int w = 720;
 		int h = 540;
-		int fps = 24;
+		int fps = 30;
 		int64_t t,dt,dts;
 		int count = 0;
 		cap->setProperty(cv::CV_CAP_PROP_FRAME_WIDTH,w);
@@ -137,50 +139,58 @@ int _tmain(int argc, _TCHAR* argv[])
 		w = cap->getProperty(cv::CV_CAP_PROP_FRAME_WIDTH);
 		h = cap->getProperty(cv::CV_CAP_PROP_FRAME_HEIGHT);
 		fps = cap->getProperty(cv::CV_CAP_PROP_FPS);
-		AVEncodeContext* pec = ffCreateEncodeContext("g:\\cap_test.mp4",
-			w, h, fps, 400000, AV_CODEC_ID_MPEG4,
+		AVEncodeContext* pec = ffCreateEncodeContext("rtmp://localhost/myapp/mystream", "flv",
+			w, h, { fps,1 }, 400000, AV_CODEC_ID_H264,
 			SAMPLE_RATE, 64000, AV_CODEC_ID_NONE, opt);
+		/*
+		AVEncodeContext* pec = ffCreateEncodeContext("g:\\test_video\\vfwcap.mp4", NULL,
+			w, h, { fps,1 }, 400000, AV_CODEC_ID_H264,
+			SAMPLE_RATE, 64000, AV_CODEC_ID_NONE, opt);
+		*/
+	//	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test_video\\vfwcap.mp4", NULL,
+	//		w, h, { fps, 1 }, 400000, AV_CODEC_ID_H264,
+	//		SAMPLE_RATE, 64000, AV_CODEC_ID_NONE, opt);
 
 		if (pec)
 		{
 			t = GetTickCount64();
-			
-			double dps = 1000.0 / fps;
-			for (int i = 0; i < 10 * fps;  i++)
+			int64_t nframe = 0;
+			AVRaw * praw = NULL;
+			int nFrameCount = 60 * fps;
+			while (nframe<nFrameCount)
 			{
-				DWORD st1, st2, st3;
-				DWORD st0 = GetTickCount();
 				if (cap->grabFrame())
 				{
-					st1 = GetTickCount(); 
-					AVRaw * praw = cap->retrieveFrame(0);
-					st2 = GetTickCount();
-					if (praw)
+					praw = cap->retrieveFrame(0);
+					if (praw){
+						dt = GetTickCount64() - t;
+						int64_t pn = (int64_t)((dt * fps) / 1000);
+						if (pn-nframe>0)
+							praw->recount += (pn - nframe - 1);
 						ffAddFrame(pec, praw);
-					st3 = GetTickCount();
+						nframe += praw->recount;
+					}
 				}
-				printf("grab = %d retrieve = %d,ffAddFrame = %d\n",st1-st0,st2-st1,st3-st2);
-				count = 0;
-				dts = (i+1)*dps;
+
 				do
 				{
 					dt = GetTickCount64() - t;
 					Sleep(1);
-					count++;
-				} while (dt < dts);
-				printf("%d dt=%d s %I64d\n", count,dt/1000,(dt-dts));
+				} while (dt * fps <= nframe*1000ll);
+			
+				printf("%.4fs , nframe = %I64\n", (double)(GetTickCount64()-t)/ 1000.0, nframe);
 			}
 		}
 		delete cap;
-		ffFlush(pec);
-		ffCloseEncodeContext(pec);
+		if (pec){
+			ffFlush(pec);
+			ffCloseEncodeContext(pec);
+		}
 	}
 	else
 	{
 		printf("could not fund camera.\n");
 	}
-	*/
-
 
 
 	//音频压缩测试
@@ -249,6 +259,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	//测试从一个文件读取，然后压缩进入另一个文件
 	//read_trancode("g:\\2.mp4", "g:\\test_out.mp4");
+#endif
 	return 0;
 }
 
