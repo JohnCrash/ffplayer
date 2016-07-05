@@ -15,3 +15,4 @@ proj.win32/
 Classes/cur/
 ffmpegcmd/Debug/
 test/Debug/
+ffmpeg/Debug/
