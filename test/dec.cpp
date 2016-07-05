@@ -282,7 +282,7 @@ static AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height)
 	/* allocate the buffers for the frame data */
 	ret = av_frame_get_buffer(picture, 32);
 	if (ret < 0) {
-		ffLog("Could not allocate frame data.\n");
+		av_log(NULL,AV_LOG_FATAL,"Could not allocate frame data.\n");
 		return NULL;
 	}
 
@@ -300,7 +300,7 @@ static AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
 	int ret;
 
 	if (!frame) {
-		ffLog("Error allocating an audio frame\n");
+		av_log(NULL,AV_LOG_FATAL,"Error allocating an audio frame\n");
 		return NULL;
 	}
 
@@ -312,7 +312,7 @@ static AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
 	if (nb_samples) {
 		ret = av_frame_get_buffer(frame, 0);
 		if (ret < 0) {
-			ffLog("Error allocating an audio buffer\n");
+			av_log(NULL,AV_LOG_FATAL,"Error allocating an audio buffer\n");
 			return NULL;
 		}
 	}

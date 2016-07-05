@@ -23,7 +23,7 @@ typedef void(*transproc_t)(int64_t total,int64_t i);
 * audioBitRate 音频编码的码率,-1取默认值
 * 成功返回0,失败返回-1
 */
-int ffTranscode(const char *input,const char *output,
+int ffTranscode(const char *input,const char *output,const char *fmt,
 	AVCodecID video_id,float w,float h,int bitRate,
 	AVCodecID audio_id, int audioBitRate,
 	transproc_t progress);

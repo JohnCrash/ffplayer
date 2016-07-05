@@ -67,22 +67,6 @@ typedef std::mutex mutex_t;
 typedef std::condition_variable condition_t;
 typedef std::unique_lock<std::mutex> mutex_lock_t;
 
-typedef void(*tLogFunc)(char *s);
-/**
-* 设置日志输出函数
-*/
-void ffSetLogHandler(tLogFunc logfunc);
-
-/**
-* 日志输出
-*/
-void ffLog(const char * fmt, ...);
-
-/*
-* 取得最近的错误
-*/
-const char * ffLastError();
-
 /*
 * 初始化ff库,注册设备，初始网络。
 */

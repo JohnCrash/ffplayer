@@ -238,7 +238,13 @@ namespace cv
 			return 0;
 		}
 		retain_raw(frame);
-
+		/*
+			FIXME: µœ÷YUV420P±‡¬Î
+		if (vfmt0.biCompression == MAKEFOURCC('N', 'V', '1', '2'))
+		{
+			return 0;
+		}
+		else */
 		if (vfmt0.biCompression != BI_RGB ||
 			vfmt0.biBitCount != 24)
 		{

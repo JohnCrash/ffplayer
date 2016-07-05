@@ -7,7 +7,7 @@
  * 如 ： FFALIGN(360,32) = 364
  * 这里写一个简单的32位对齐函数
  */
-static int ffAlign32(int x)
+int ffAlign32(int x)
 {
 	int m = x % 4;
 	return m == 0 ? x : x + 4 - m;
@@ -93,7 +93,7 @@ static AVRaw * rebuffer_pop_raw(AVRaw **head, AVRaw **tail)
  * 如果帧率改变就需要删除帧或者增加帧，对于音频也需要相应的转换。
  * 时间戳要重新计算，这样算法的复杂度将增加很多。
  */
-int ffTranscode(const char *input, const char *output,
+int ffTranscode(const char *input, const char *output,const char *fmt,
 	AVCodecID video_id, float width, float height,int bitRate,
 	AVCodecID audio_id, int audioBitRate, transproc_t progress)
 {
@@ -138,7 +138,7 @@ int ffTranscode(const char *input, const char *output,
 		if (pdc->has_video)
 		{
 			total = pdc->_video_st->nb_frames;
-			if (total <= 0 && pdc->_video_st->time_base.den>0)
+			if (total <= 0 && pdc->_video_st->time_base.den>0 && pdc->_video_st->duration != AV_NOPTS_VALUE)
 			{
 				double sl = (double)(pdc->_video_st->duration*pdc->_video_st->time_base.num)/(double)pdc->_video_st->time_base.den;
 				total = (int64_t)(pdc->_video_st->r_frame_rate.num*sl / (double)pdc->_video_st->r_frame_rate.den);
@@ -152,7 +152,7 @@ int ffTranscode(const char *input, const char *output,
 			total = 0;
 		i = 1;
 
-		pec = ffCreateEncodeContext(output,NULL, w, h, ffGetFrameRate(pdc), bitRate, video_id, sampleRate, audioBitRate, audio_id, opt);
+		pec = ffCreateEncodeContext(output,fmt, w, h, ffGetFrameRate(pdc), bitRate, video_id, sampleRate, audioBitRate, audio_id, opt);
 		if (pec)
 		{
 			/*

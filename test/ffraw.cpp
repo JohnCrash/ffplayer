@@ -36,7 +36,7 @@ AVRaw *make_image_raw(int format, int w, int h)
 		{
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("make_image_raw av_image_alloc : %s \n", errmsg);
+			av_log(NULL,AV_LOG_FATAL,"make_image_raw av_image_alloc : %s \n", errmsg);
 			break;
 		}
 		praw->size = ret;
@@ -53,7 +53,7 @@ AVRaw *make_image_raw(int format, int w, int h)
 	}
 	else
 	{
-		ffLog("make_image_raw out of memory.\n");
+		av_log(NULL,AV_LOG_FATAL,"make_image_raw out of memory.\n");
 	}
 	praw = NULL;
 	return praw;
@@ -79,7 +79,7 @@ AVRaw *make_audio_raw(int format, int channel, int samples)
 		{
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("make_audio_raw av_samples_alloc : %s \n", errmsg);
+			av_log(NULL,AV_LOG_FATAL,"make_audio_raw av_samples_alloc : %s \n", errmsg);
 			break;
 		}
 
@@ -95,7 +95,7 @@ AVRaw *make_audio_raw(int format, int channel, int samples)
 	}
 	else
 	{
-		ffLog("make_audio_raw out of memory.\n");
+		av_log(NULL,AV_LOG_FATAL,"make_audio_raw out of memory.\n");
 	}
 	praw = NULL;
 	return praw;

@@ -1,5 +1,7 @@
 #include "ffdec.h"
 
+#define CAP_DEVICE_NAME "dshow"
+
 /*
 * 打开音频编码器
 */
@@ -16,7 +18,7 @@ static int open_audio(AVDecodeCtx *pec, AVCodecID audio_codec_id, AVDictionary *
 	codec = avcodec_find_decoder(audio_codec_id);
 	if (!codec)
 	{
-		ffLog("Could not find encoder '%s'\n", avcodec_get_name(audio_codec_id));
+		av_log(NULL,AV_LOG_FATAL,"Could not find encoder '%s'\n", avcodec_get_name(audio_codec_id));
 		return -1;
 	}
 
@@ -27,7 +29,7 @@ static int open_audio(AVDecodeCtx *pec, AVCodecID audio_codec_id, AVDictionary *
 	if (ret < 0) {
 		char errmsg[ERROR_BUFFER_SIZE];
 		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-		ffLog("Could not open audio codec: %s\n", errmsg);
+		av_log(NULL,AV_LOG_FATAL,"Could not open audio codec: %s\n", errmsg);
 		return -1;
 	}
 
@@ -47,7 +49,7 @@ static int open_audio(AVDecodeCtx *pec, AVCodecID audio_codec_id, AVDictionary *
 	/* create resampler context */
 	pec->_actx.swr_ctx = swr_alloc();
 	if (!pec->_actx.swr_ctx) {
-		ffLog("Could not allocate resampler context.\n");
+		av_log(NULL,AV_LOG_FATAL,"Could not allocate resampler context.\n");
 		return -1;
 	}
 
@@ -61,7 +63,7 @@ static int open_audio(AVDecodeCtx *pec, AVCodecID audio_codec_id, AVDictionary *
 
 	/* initialize the resampling context */
 	if ((ret = swr_init(pec->_actx.swr_ctx)) < 0) {
-		ffLog("Failed to initialize the resampling context\n");
+		av_log(NULL,AV_LOG_FATAL,"Failed to initialize the resampling context\n");
 		return -1;
 	}
 	return 0;
@@ -80,7 +82,7 @@ static int open_video(AVDecodeCtx *pec, AVCodecID video_codec_id, AVDictionary *
 	codec = avcodec_find_decoder(video_codec_id);
 	if (!codec)
 	{
-		ffLog("Could not find encoder '%s'\n", avcodec_get_name(video_codec_id));
+		av_log(NULL,AV_LOG_FATAL,"Could not find encoder '%s'\n", avcodec_get_name(video_codec_id));
 		return -1;
 	}
 
@@ -92,7 +94,7 @@ static int open_video(AVDecodeCtx *pec, AVCodecID video_codec_id, AVDictionary *
 	if (ret < 0) {
 		char errmsg[ERROR_BUFFER_SIZE];
 		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-		ffLog("Could not open video codec: %s\n", errmsg);
+		av_log(NULL,AV_LOG_FATAL,"Could not open video codec: %s\n", errmsg);
 		return -1;
 	}
 
@@ -100,7 +102,7 @@ static int open_video(AVDecodeCtx *pec, AVCodecID video_codec_id, AVDictionary *
 	/* allocate and init a re-usable frame */
 	pec->_vctx.frame = alloc_picture(c->pix_fmt, c->width, c->height);
 	if (!pec->_vctx.frame) {
-		ffLog("Could not allocate video frame\n");
+		av_log(NULL,AV_LOG_FATAL,"Could not allocate video frame\n");
 		return -1;
 	}
 
@@ -127,10 +129,17 @@ AVDecodeCtx *ffCreateDecodeContext(
 		pdc->_ctx = avformat_alloc_context();
 		if (!pdc->_ctx)
 		{
-			ffLog("ffCreateDecodeContext : could not allocate context.\n");
+			av_log(NULL,AV_LOG_FATAL,"ffCreateDecodeContext : could not allocate context.\n");
 			break;
 		}
-		
+		//filename = "video=.." ,open dshow device
+		if (filename && strstr(filename, "video=") == filename){
+			file_iformat = av_find_input_format("dshow");
+			if (!file_iformat){
+				av_log(NULL, AV_LOG_FATAL, "Unknown input format: 'dshow'\n");
+				break;
+			}
+		}
 		av_dict_copy(&opt, opt_arg, 0);
 		ret = avformat_open_input(&pdc->_ctx, filename, file_iformat, &opt);
 		av_dict_free(&opt);
@@ -139,7 +148,7 @@ AVDecodeCtx *ffCreateDecodeContext(
 		{
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("ffCreateDecodeContext %s.\n",errmsg);
+			av_log(NULL,AV_LOG_FATAL,"ffCreateDecodeContext %s.\n",errmsg);
 			break;
 		}
 		av_format_inject_global_side_data(pdc->_ctx);
@@ -152,7 +161,7 @@ AVDecodeCtx *ffCreateDecodeContext(
 		{
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("ffCreateDecodeContext %s.\n", errmsg);
+			av_log(NULL,AV_LOG_FATAL,"ffCreateDecodeContext %s.\n", errmsg);
 			break;
 		}
 		/*
@@ -279,7 +288,7 @@ AVRaw * ffReadFrame(AVDecodeCtx *pdc)
 		{
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("ffReadFrame av_read_frame : %s.\n", errmsg);
+			av_log(NULL,AV_LOG_FATAL,"ffReadFrame av_read_frame : %s.\n", errmsg);
 			return NULL;
 		}
 		if (pkt.stream_index == pdc->_video_st_index)
@@ -312,4 +321,153 @@ AVRaw * ffReadFrame(AVDecodeCtx *pdc)
 		av_free_packet(&pkt);
 	}
 	return NULL;
+}
+
+int ffCapDevicesList(AVDevice *pdevices, int nmax)
+{
+	int i,count, ret;
+	AVInputFormat *file_iformat = NULL;
+	AVDictionary *opt = NULL;
+	const char * filename = "dummy";
+	AVFormatContext * ctx = NULL;
+	char buf[256];
+	AVDeviceType type = AV_DEVICE_NONE;
+	while (true)
+	{
+		/*
+		 * 初始结构
+		 */
+		memset(pdevices, 0, nmax*sizeof(AVDevice));
+
+		ctx = avformat_alloc_context();
+		if (!ctx)
+		{
+			av_log(NULL, AV_LOG_FATAL, "ffCreateDecodeContext : could not allocate context.\n");
+			break;
+		}
+		file_iformat = av_find_input_format(CAP_DEVICE_NAME);
+		if (!file_iformat){
+			av_log(NULL, AV_LOG_FATAL, "Unknown input format: 'dshow'\n");
+			break;
+		}
+		
+		/*
+		 * 使用日志回调函数来取得俘获设备的信息
+		 */
+		av_dict_set(&opt, "list_devices", "true", 0);
+
+		i = 0;
+		static auto cb = [&](void * acl, int level, const char *format, va_list arg)->void
+		{
+			if (level == AV_LOG_INFO && i < nmax ){
+				if (strstr(format, "DirectShow video devices") == format){
+					type = AV_DEVICE_VIDEO;
+				}
+				else if (strstr(format, "DirectShow audio devices") == format){
+					type = AV_DEVICE_AUDIO;
+				}
+				else if (strstr(format, " \"%s\"\n") == format){
+					strcpy(pdevices[i].name, va_arg(arg, char*));
+					pdevices[i].type = type;
+				}
+				else if (strstr(format, "    Alternative name \"%s\"\n") == format){
+					strcpy(pdevices[i].alternative_name, va_arg(arg, char*));
+					i++;
+				}
+				else if (strstr(format, "  min s=") == format){
+					//min %ldx%ld,%g, max %ldx%ld,fps %g
+					int index = pdevices[i].capability_count;
+					if (index < MAX_CAPABILITY_COUNT && index >= 0){
+						pdevices[i].capability[index].video.min_w = va_arg(arg, int);
+						pdevices[i].capability[index].video.min_h = va_arg(arg, int);
+						pdevices[i].capability[index].video.min_fps = va_arg(arg, double);
+						pdevices[i].capability[index].video.max_w = va_arg(arg, int);
+						pdevices[i].capability[index].video.max_h = va_arg(arg, int);
+						pdevices[i].capability[index].video.max_fps = va_arg(arg, double);
+						pdevices[i].capability_count++;
+					}
+				}
+				else if (strstr(format, "  min ch=") == format){
+					//"  min ch=%lu bits=%lu rate=%6lu max ch=%lu bits=%lu rate=%6lu\n"
+					int index = pdevices[i].capability_count;
+					if (index < MAX_CAPABILITY_COUNT && index >= 0){
+						pdevices[i].capability[index].audio.min_ch = va_arg(arg, int);
+						pdevices[i].capability[index].audio.min_bit = va_arg(arg, int);
+						pdevices[i].capability[index].audio.min_rate = va_arg(arg, int);
+						pdevices[i].capability[index].audio.max_ch = va_arg(arg, int);
+						pdevices[i].capability[index].audio.max_bit = va_arg(arg, int);
+						pdevices[i].capability[index].audio.max_rate = va_arg(arg, int);
+						pdevices[i].capability_count++;
+					}
+				}
+				else if (strstr(format, "  pixel_format=") == format){
+					int index = pdevices[i].capability_count;
+					if (index < MAX_CAPABILITY_COUNT && index >= 0){
+						char * pf = va_arg(arg, char*);
+						if (strlen(pf) < MAX_FORMAT_LENGTH)
+							strcpy(pdevices[i].capability[index].video.pix_format, pf);
+						else
+							strcpy(pdevices[i].capability[index].video.pix_format, "overflow");
+					}
+				}
+				else if (strstr(format, "  vcodec=") == format){
+					//%s
+					int index = pdevices[i].capability_count;
+					if (index < MAX_CAPABILITY_COUNT && index >= 0){
+						char * pf = va_arg(arg, char*);
+						if (strlen(pf) < MAX_FORMAT_LENGTH)
+							strcpy(pdevices[i].capability[index].video.codec_name, pf);
+						else
+							strcpy(pdevices[i].capability[index].video.codec_name, "overflow");
+					}
+				}
+				else if (strstr(format, "  unknown compression type") == format){
+					//%X
+					//printf("vcodec=%X\n", va_arg(arg, int));
+				}
+				else if (strstr(format, "DirectShow %s device options (from %s devices)\n") == format){
+					//printf("DirectShow %s device options (from %s devices)\n", arg);
+				}
+				else if (strstr(format, " Pin \"%s\" (alternative pin name \"%s\")\n") == format){
+					//printf(" Pin \"%s\" (alternative pin name \"%s\")\n", arg);
+				}
+			}
+		};
+		av_log_set_callback(
+			[](void * acl, int level, const char *format, va_list arg)->void
+			{
+				cb(acl,level,format,arg);
+			}
+		);
+
+		ret = avformat_open_input(&ctx, filename, file_iformat, &opt);
+
+		av_dict_set(&opt, "list_devices", "false", 0);
+		av_dict_set(&opt, "list_options", "true", 0);
+		count = i;
+		for (i = 0; i < count; i++){
+			char filename[512];
+			if (pdevices[i].type==AV_DEVICE_VIDEO)
+				snprintf(filename, 512, "video=%s", pdevices[i].alternative_name);
+			else if (pdevices[i].type == AV_DEVICE_AUDIO)
+				snprintf(filename, 512, "audio=%s", pdevices[i].alternative_name);
+			else{
+				printf("Unknow device type\n");
+				continue;
+			}
+
+			ret = avformat_open_input(&ctx, filename, file_iformat, &opt);
+		}
+
+		av_log_set_callback(av_log_default_callback);
+
+		av_dict_free(&opt);
+		avformat_close_input(&ctx);
+
+		return count;
+	}
+
+	if (ctx)
+		avformat_close_input(&ctx);
+	return -1;
 }

@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <LocalDebuggerCommandArguments>-f dshow -i video="@device_pnp_\\?\usb#vid_046d&amp;pid_0825&amp;mi_00#7&amp;3458783e&amp;0&amp;0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\global" -c:v libx264 -c:a aac -ar 44100 -f flv rtmp://localhost/myapp/mystream</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>-list_devices true -f dshow -i durmmy</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>

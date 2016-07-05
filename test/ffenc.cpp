@@ -1,36 +1,5 @@
 #include "ffenc.h"
 
-static char _lastError[ERROR_BUFFER_SIZE];
-/**
-* 设置日志输出函数
-*/
-static tLogFunc _gLogFunc = NULL;
-void ffSetLogHandler(tLogFunc logfunc)
-{
-	_gLogFunc = logfunc;
-}
-
-const char * ffLastError()
-{
-	return _lastError;
-}
-
-/**
-* 日志输出
-*/
-void ffLog(const char * fmt,...)
-{
-	char buf[ERROR_BUFFER_SIZE];
-	va_list args;
-	va_start(args, fmt);
-	vsnprintf(buf, ERROR_BUFFER_SIZE - 3, fmt, args);
-	va_end(args);
-	if (_gLogFunc)
-		_gLogFunc(buf);
-	else
-		printf("%s", buf);
-}
-
 /*
  * 向AVFormatContext加入新的流
  */
@@ -45,14 +14,14 @@ static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
 	codec = avcodec_find_encoder(codec_id);
 	if (!codec)
 	{
-		ffLog("Could not find encoder '%s'\n", avcodec_get_name(codec_id));
+		av_log(NULL,AV_LOG_FATAL,"Could not find encoder '%s'\n", avcodec_get_name(codec_id));
 		return -1;
 	}
 
 	st = avformat_new_stream(pec->_ctx, codec);
 	if (!st)
 	{
-		ffLog("Could not allocate stream\n");
+		av_log(NULL,AV_LOG_FATAL,"Could not allocate stream\n");
 		return -1;
 	}
 	st->id = pec->_ctx->nb_streams - 1;
@@ -119,7 +88,7 @@ static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
 		}
 		break;
 	default:
-		ffLog("Unknow stream type\n");
+		av_log(NULL,AV_LOG_FATAL,"Unknow stream type\n");
 		return -1;
 	}
 
@@ -158,7 +127,7 @@ AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height)
 	/* allocate the buffers for the frame data */
 	ret = av_frame_get_buffer(picture, 32);
 	if (ret < 0) {
-		ffLog("Could not allocate frame data.\n");
+		av_log(NULL,AV_LOG_FATAL,"Could not allocate frame data.\n");
 		return NULL;
 	}
 
@@ -178,7 +147,7 @@ static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,AVDictionar
 	codec = avcodec_find_encoder(video_codec_id);
 	if (!codec)
 	{
-		ffLog("Could not find encoder '%s'\n", avcodec_get_name(video_codec_id));
+		av_log(NULL,AV_LOG_FATAL,"Could not find encoder '%s'\n", avcodec_get_name(video_codec_id));
 		return -1;
 	}
 
@@ -190,7 +159,7 @@ static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,AVDictionar
 	if (ret < 0) {
 		char errmsg[ERROR_BUFFER_SIZE];
 		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-		ffLog("Could not open video codec: %s\n",errmsg);
+		av_log(NULL,AV_LOG_FATAL,"Could not open video codec: %s\n",errmsg);
 		return -1;
 	}
 
@@ -198,7 +167,7 @@ static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,AVDictionar
 	/* allocate and init a re-usable frame */
 	pec->_vctx.frame = alloc_picture(c->pix_fmt, c->width, c->height);
 	if (!pec->_vctx.frame) {
-		ffLog("Could not allocate video frame\n");
+		av_log(NULL,AV_LOG_FATAL,"Could not allocate video frame\n");
 		return -1;
 	}
 
@@ -216,7 +185,7 @@ AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
 	int ret;
 
 	if (!frame) {
-		ffLog("Error allocating an audio frame\n");
+		av_log(NULL,AV_LOG_FATAL,"Error allocating an audio frame\n");
 		return NULL;
 	}
 
@@ -228,7 +197,7 @@ AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
 	if (nb_samples) {
 		ret = av_frame_get_buffer(frame, 0);
 		if (ret < 0) {
-			ffLog("Error allocating an audio buffer\n");
+			av_log(NULL,AV_LOG_FATAL,"Error allocating an audio buffer\n");
 			return NULL;
 		}
 	}
@@ -252,7 +221,7 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 	codec = avcodec_find_encoder(audio_codec_id);
 	if (!codec)
 	{
-		ffLog("Could not find encoder '%s'\n", avcodec_get_name(audio_codec_id));
+		av_log(NULL,AV_LOG_FATAL,"Could not find encoder '%s'\n", avcodec_get_name(audio_codec_id));
 		return -1;
 	}
 
@@ -263,7 +232,7 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 	if (ret < 0) {
 		char errmsg[ERROR_BUFFER_SIZE];
 		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-		ffLog("Could not open audio codec: %s\n", errmsg);
+		av_log(NULL,AV_LOG_FATAL,"Could not open audio codec: %s\n", errmsg);
 		return -1;
 	}
 
@@ -283,7 +252,7 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 	/* create resampler context */
 	pec->_actx.swr_ctx = swr_alloc();
 	if (!pec->_actx.swr_ctx) {
-		ffLog("Could not allocate resampler context.\n");
+		av_log(NULL,AV_LOG_FATAL,"Could not allocate resampler context.\n");
 		return -1;
 	}
 
@@ -297,7 +266,7 @@ static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictiona
 
 	/* initialize the resampling context */
 	if ((ret = swr_init(pec->_actx.swr_ctx)) < 0) {
-		ffLog("Failed to initialize the resampling context\n");
+		av_log(NULL,AV_LOG_FATAL,"Failed to initialize the resampling context\n");
 		return -1;
 	}
 	return 0;
@@ -471,7 +440,7 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 		{
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("make_video_frame av_frame_make_writable : %s\n", errmsg);
+			av_log(NULL,AV_LOG_FATAL,"make_video_frame av_frame_make_writable : %s\n", errmsg);
 			return NULL;
 		}
 		/*
@@ -495,7 +464,7 @@ AVFrame * make_video_frame(AVCtx * ctx,AVRaw * praw)
 				c->pix_fmt,
 				SCALE_FLAGS, NULL, NULL, NULL);
 			if (!ctx->sws_ctx) {
-				ffLog("Could not initialize the conversion context\n");
+				av_log(NULL,AV_LOG_FATAL,"Could not initialize the conversion context\n");
 				return NULL;
 			}
 		}
@@ -569,7 +538,7 @@ static int write_video_frame(AVEncodeContext * pec, AVRaw *praw)
 			if (ret < 0) {
 				char errmsg[ERROR_BUFFER_SIZE];
 				av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-				ffLog("Error encoding video frame: %s\n", errmsg);
+				av_log(NULL,AV_LOG_FATAL,"Error encoding video frame: %s\n", errmsg);
 				return -1;
 			}
 
@@ -584,7 +553,7 @@ static int write_video_frame(AVEncodeContext * pec, AVRaw *praw)
 		if (ret < 0) {
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("Error while writing video frame: %s\n", errmsg);
+			av_log(NULL,AV_LOG_FATAL,"Error while writing video frame: %s\n", errmsg);
 			return -1;
 		}
 	}
@@ -615,7 +584,7 @@ AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 			c->sample_rate, c->sample_rate, AV_ROUND_UP);
 		if (dst_nb_samples != frame->nb_samples)
 		{
-			ffLog("get_audio_frame assert dst_nb_samples == frame->nb_samples\n");
+			av_log(NULL,AV_LOG_FATAL,"get_audio_frame assert dst_nb_samples == frame->nb_samples\n");
 			return NULL;
 		}
 		
@@ -626,7 +595,7 @@ AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 		ret = av_frame_make_writable(ctx->frame);
 		if (ret < 0)
 		{
-			ffLog("get_audio_frame av_frame_make_writable return <0\n");
+			av_log(NULL,AV_LOG_FATAL,"get_audio_frame av_frame_make_writable return <0\n");
 			return NULL;
 		}
 		/* convert to destination format */
@@ -634,7 +603,7 @@ AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 			frame->data, dst_nb_samples,
 			(const uint8_t**)praw->data, praw->samples);
 		if (ret < 0) {
-			ffLog("get_audio_frame error while converting\n");
+			av_log(NULL,AV_LOG_FATAL,"get_audio_frame error while converting\n");
 			return NULL;
 		}
 	}
@@ -682,7 +651,7 @@ static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
 	if (ret < 0) {
 		char errmsg[ERROR_BUFFER_SIZE];
 		av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-		ffLog("Error encoding audio frame: %s\n", errmsg);
+		av_log(NULL,AV_LOG_FATAL,"Error encoding audio frame: %s\n", errmsg);
 		return -1;
 	}
 
@@ -691,7 +660,7 @@ static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
 		if (ret < 0) {
 			char errmsg[ERROR_BUFFER_SIZE];
 			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			ffLog("Error while writing audio frame: %s\n",
+			av_log(NULL,AV_LOG_FATAL,"Error while writing audio frame: %s\n",
 				errmsg);
 			return -1;
 		}
@@ -777,7 +746,7 @@ int encode_thread_proc(AVEncodeContext * pec)
 			}
 			else
 			{
-				ffLog("Unknow raw type.\n");
+				av_log(NULL,AV_LOG_FATAL,"Unknow raw type.\n");
 				break;
 			}
 
@@ -812,7 +781,7 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 	pec = (AVEncodeContext *)malloc(sizeof(AVEncodeContext));
 	if (!pec)
 	{
-		ffLog("ffCreateEncodeContext malloc return nullptr\n");
+		av_log(NULL,AV_LOG_FATAL,"ffCreateEncodeContext malloc return nullptr\n");
 		return pec;
 	}
 	memset(pec, 0, sizeof(AVEncodeContext));
@@ -824,7 +793,7 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 	 */
 	avformat_alloc_output_context2(&ofmt_ctx, NULL, fmt, filename);
 	if (!ofmt_ctx){
-		ffLog("avformat_alloc_output_context2 return failed.");
+		av_log(NULL,AV_LOG_FATAL,"avformat_alloc_output_context2 return failed.");
 		ffCloseEncodeContext(pec);
 		return NULL;
 	}
@@ -836,7 +805,7 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 	{
 		if (add_stream(pec, video_codec_id, w, h, frameRate, videoBitRate) < 0)
 		{
-			ffLog("Add video stream failed\n");
+			av_log(NULL,AV_LOG_FATAL,"Add video stream failed\n");
 			ffCloseEncodeContext(pec);
 			return NULL;
 		}
@@ -849,7 +818,7 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 		rat.den = 1;
 		if (add_stream(pec, audio_codec_id, 0, 0, rat, audioBitRate) < 0)
 		{
-			ffLog("Add audio stream failed\n");
+			av_log(NULL,AV_LOG_FATAL,"Add audio stream failed\n");
 			ffCloseEncodeContext(pec);
 			return NULL;
 		}
@@ -883,7 +852,7 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 	if (!(ofmt->flags & AVFMT_NOFILE)) {
 		ret = avio_open(&ofmt_ctx->pb, filename, AVIO_FLAG_WRITE);
 		if (ret < 0) {
-			ffLog("Could not open output file '%s'\n", filename);
+			av_log(NULL,AV_LOG_FATAL,"Could not open output file '%s'\n", filename);
 			ffCloseEncodeContext(pec);
 			return NULL;
 		}
@@ -893,7 +862,7 @@ AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 	 */
 	ret = avformat_write_header(ofmt_ctx, NULL);
 	if (ret < 0) {
-		ffLog("Error occurred when opening output file \n");
+		av_log(NULL,AV_LOG_FATAL,"Error occurred when opening output file \n");
 		ffCloseEncodeContext(pec);
 		return NULL;
 	}
@@ -988,7 +957,7 @@ int ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
 {
 	if (pec->_stop_thread)
 	{
-		ffLog("ffAddFrame encode thread already stoped.\n");
+		av_log(NULL,AV_LOG_FATAL,"ffAddFrame encode thread already stoped.\n");
 		return -1;
 	}
 
@@ -1009,7 +978,7 @@ int ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
 		pec->_cond->notify_one();
 	}
 	else
-		ffLog("ffAddFrame unknow type of AVRaw\n"); 
+		av_log(NULL,AV_LOG_FATAL,"ffAddFrame unknow type of AVRaw\n"); 
 
 	return 0;
 }

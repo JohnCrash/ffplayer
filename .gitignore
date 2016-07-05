@@ -13,3 +13,5 @@ Classes/old/
 proj.win32/
 *.zip
 Classes/cur/
+ffmpegcmd/Debug/
+test/Debug/
