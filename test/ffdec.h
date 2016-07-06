@@ -9,8 +9,8 @@
 struct AVDecodeCtx
 {
 	const char * _fileName;
-	int _width;
-	int _height;
+	//int _width;
+	//int _height;
 	AVFormatContext * _ctx;
 	AVStream *_video_st;
 	AVStream * _audio_st;
@@ -76,8 +76,9 @@ int ffCapDevicesList(AVDevice *pdevices,int nmax);
  * 创建一个设备解码器，通过设备名称
  */
 AVDecodeCtx *ffCreateCapDeviceDecodeContext(
-	const char *video_device,
-	const char *audio_device);
+	const char *video_device,int w,int h,int fps,
+	const char *audio_device,int chancel,int bit,int rate,
+	AVDictionary * opt);
 
 /*
  * 取得视频的帧率，宽度，高度

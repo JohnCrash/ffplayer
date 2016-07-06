@@ -366,6 +366,7 @@ static AVRaw * ffPopFrame(AVEncodeContext * pec)
 
 	if (pec->encode_audio && pec->encode_video)
 	{
+#if 0
 		/*
 		 * 音频和视频的数据要交替写入到流文件
 		 */
@@ -390,6 +391,25 @@ static AVRaw * ffPopFrame(AVEncodeContext * pec)
 				pec->_cond->wait(lock);
 			pec->_encode_waiting = 0;
 			praw = list_pop_raw(&pec->_audio_head, &pec->_audio_tail);
+		}
+#endif
+		pec->_encode_waiting = 1;
+		//如果pec->_video_head == NULL && pec->_video_head == NULL
+		while (!(pec->_video_head || pec->_audio_head) && !pec->_isflush)
+			pec->_cond->wait(lock);
+		pec->_encode_waiting = 0;
+
+		if (pec->_video_head && 
+			av_compare_ts(pec->_actx.next_pts, pec->_audio_st->codec->time_base,
+			pec->_vctx.next_pts, pec->_video_st->codec->time_base) >= 0)
+		{
+			praw = list_pop_raw(&pec->_video_head, &pec->_video_tail);
+		}
+		else if (pec->_audio_head){
+			praw = list_pop_raw(&pec->_audio_head, &pec->_audio_tail);
+		}
+		else if (pec->_video_head){
+			praw = list_pop_raw(&pec->_video_head, &pec->_video_tail);
 		}
 	}
 	else if (pec->encode_video)
@@ -582,11 +602,11 @@ AVFrame * get_audio_frame(AVCtx * ctx,AVRaw *praw)
 		/* compute destination number of samples */
 		dst_nb_samples = av_rescale_rnd(swr_get_delay(ctx->swr_ctx, c->sample_rate) + frame->nb_samples,
 			c->sample_rate, c->sample_rate, AV_ROUND_UP);
-		if (dst_nb_samples != frame->nb_samples)
-		{
-			av_log(NULL,AV_LOG_FATAL,"get_audio_frame assert dst_nb_samples == frame->nb_samples\n");
-			return NULL;
-		}
+//		if (dst_nb_samples != frame->nb_samples)
+//		{
+//			av_log(NULL,AV_LOG_FATAL,"get_audio_frame assert dst_nb_samples == frame->nb_samples\n");
+//			return NULL;
+//		}
 		
 		/* when we pass a frame to the encoder, it may keep a reference to it
 		* internally;
@@ -717,10 +737,11 @@ static void write_delay_frame(AVEncodeContext *pec)
 int encode_thread_proc(AVEncodeContext * pec)
 {
 	int ret;
+	AVRaw * praw;
 
 	while (!pec->_stop_thread)
 	{
-		AVRaw * praw = ffPopFrame(pec);
+		praw = ffPopFrame(pec);
 		/*
 		 * 压缩原生数据并写入到文件中
 		 */

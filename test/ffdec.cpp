@@ -471,3 +471,47 @@ int ffCapDevicesList(AVDevice *pdevices, int nmax)
 		avformat_close_input(&ctx);
 	return -1;
 }
+
+AVDecodeCtx *ffCreateCapDeviceDecodeContext(
+	const char *video_device, int w, int h, int fps,
+	const char *audio_device, int chancel, int bit, int rate, AVDictionary * opt)
+{
+	char buf[32];
+	char filename[2*MAX_DEVICE_NAME_LENGTH];
+
+	if (video_device){
+		
+		strcpy(filename, "video=");
+		strcat(filename, video_device);
+
+		if (audio_device){
+			strcat(filename, ":audio=");
+			strcat(filename, audio_device);
+		}
+	}
+	else if(audio_device){
+		strcat(filename, "audio=");
+		strcat(filename, audio_device);
+	}
+	else return NULL;
+
+	if (video_device){
+		snprintf(buf, 32, "%dx%d", w, h);
+		av_dict_set(&opt, "video_size", buf, 0);
+		snprintf(buf, 32, "%d", fps);
+		av_dict_set(&opt, "framerate", buf, 0);
+	//俘获缓冲区大小
+	//	snprintf(buf, 32, "%d", 8*1024*1024);
+	//	av_dict_set(&opt, "rtbufsize", buf, 0);
+	}
+	if (audio_device){
+		snprintf(buf, 32, "%d", chancel);
+		av_dict_set(&opt, "channels",buf, 0);
+		snprintf(buf, 32, "%d", bit);
+		av_dict_set(&opt, "sample_size", buf, 0);
+		snprintf(buf, 32, "%d", rate);
+		av_dict_set(&opt, "sample_rate", buf, 0);
+	}
+
+	return ffCreateDecodeContext(filename,opt);
+}

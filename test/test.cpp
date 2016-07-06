@@ -194,11 +194,24 @@ int ffTranscode2(const char *input, const char *output, const char *fmt,
 	int ret = 0;
 	int w, h;
 	int64_t total, i;
+	AVDevice caps[8];
 
 	av_dict_set(&opt, "strict", "-2", 0);    //aac 编码器是实验性质的需要strict -2参数
 	av_dict_set(&opt, "threads", "4", 0); //可以启用多线程压缩
 
-	pdc = ffCreateDecodeContext(input, opt);
+	//pdc = ffCreateDecodeContext(input, opt);
+	int count = ffCapDevicesList(caps,8);
+	char * video_name = NULL;
+	char * audio_name = NULL;
+	for (int m = 0; m < count; m++){
+		if (!video_name && caps[m].type == AV_DEVICE_VIDEO){
+			video_name = caps[m].alternative_name;
+		}
+		else if (!audio_name && caps[m].type == AV_DEVICE_AUDIO){
+			audio_name = caps[m].alternative_name;
+		}
+	}
+	pdc = ffCreateCapDeviceDecodeContext(video_name,640,480,30,audio_name,2,16,44100,opt);
 	if (pdc)
 	{
 		if (!pdc->has_audio)
@@ -252,9 +265,8 @@ int ffTranscode2(const char *input, const char *output, const char *fmt,
 			AVSampleFormat enc_fmt;
 			int enc_channel;
 			int enc_samples;
-			AVRaw * praw, *head, *tail, *praw2;
+			AVRaw * praw;
 
-			tail = head = NULL;
 			if (pec->has_audio&&pdc->has_audio)
 			{
 				enc_samples = pec->_actx.frame->nb_samples;
@@ -277,69 +289,49 @@ int ffTranscode2(const char *input, const char *output, const char *fmt,
 				dt = cur_time - timer_start;
 				bframe = dt * fps.num / fps.den / 1000000ll;
 				printf("%d\n",(int)(bframe-nframe-1));
-				if (bframe - nframe > 1){
+				if (bframe - nframe >= 1){
 					praw->recount += (bframe - nframe - 1);
 					nframe += (bframe - nframe - 1);
 				}
-				praw2 = praw;
-				bool need_resamples = false;
+				else if(bframe - nframe < 0 ){
+					unsigned int us;
+					us = (nframe - bframe)*1000000ll*fps.den / fps.num;
+					av_usleep(us);
+				}
 
-				if (praw)
-					need_resamples = (enc_samples&&praw->type == RAW_AUDIO&&praw->samples != enc_samples);
-
-				while (praw2)
+				/*
+				* 如果压缩队列太多就等待
+				*/
+				while (ffGetBufferSizeKB(pec) > TRANSCODE_MAXBUFFER_SIZE)
 				{
-					if (need_resamples)
-					{
-#if 0
-						if (praw == praw2)
-						{ /* 第一次进来来，将数据重新组织 */
-							rebuffer_sample(praw2, &head, &tail, enc_fmt, enc_channel, enc_samples);
-							/* 需要释放 */
-							release_raw(praw2);
-						}
-						praw2 = rebuffer_pop_raw(&head, &tail);
-						if (!praw2)
-							break;
-#endif
-					}
 					/*
-					* 如果压缩队列太多就等待
+					* 压缩线程停止工作了或者编码器在等待喂数据就不再等待
 					*/
-					while (ffGetBufferSizeKB(pec) > TRANSCODE_MAXBUFFER_SIZE)
+					if (pec->_stop_thread || pec->_encode_waiting)
 					{
-						/*
-						* 压缩线程停止工作了或者编码器在等待喂数据就不再等待
-						*/
-						if (pec->_stop_thread || pec->_encode_waiting)
-						{
-							break;
-						}
-						std::this_thread::sleep_for(std::chrono::milliseconds(10));
-					}
-					nframe++;
-					ret = ffAddFrame(pec, praw2);
-					if (ret < 0)
 						break;
-					/*
-					* 进度回调,有视频优先视频
-					*/
-					if (progress)
+					}
+					std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				}
+				nframe++;
+				ret = ffAddFrame(pec, praw);
+				if (ret < 0)
+					break;
+				/*
+				* 进度回调,有视频优先视频
+				*/
+				if (progress)
+				{
+					if (pdc->has_video)
 					{
-						if (pdc->has_video)
-						{
-							if (praw->type == RAW_IMAGE)
-								progress(total, i++);
-						}
-						else if (pdc->has_audio)
-						{
-							if (praw->type == RAW_AUDIO)
-								progress(total, i++);
-						}
+						if (praw->type == RAW_IMAGE)
+							progress(total, i++);
 					}
-					/* 如果不需要对声音进行重新采样 */
-					if (!need_resamples)
-						break;
+					else if (pdc->has_audio)
+					{
+						if (praw->type == RAW_AUDIO)
+							progress(total, i++);
+					}
 				}
 			} while (praw);
 
@@ -347,6 +339,7 @@ int ffTranscode2(const char *input, const char *output, const char *fmt,
 			ffCloseEncodeContext(pec);
 		}
 		ffCloseDecodeContext(pdc);
+		av_dict_free(&opt);
 		return ret;
 	}
 
@@ -360,7 +353,7 @@ static void test_cap_from_device()
 		"video=@device_pnp_\\\\?\\usb#vid_046d&pid_0825&mi_00#7&3458783e&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global",
 		"rtmp://localhost/myapp/mystream", "flv",
 		AV_CODEC_ID_H264, 1, 1, 640 * 1024,
-		AV_CODEC_ID_NONE, 64 * 1000, progress);
+		AV_CODEC_ID_AAC, 64 * 1000, progress);
 	if (ret<0)
 	{
 		av_log(NULL, AV_LOG_FATAL, "ffTranscode error");
@@ -383,9 +376,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	/*
 	 * 测试转码
 	 */
-	//test_cap_from_device();
-	int count = ffCapDevicesList(avds, 8);
-	av_log(NULL, AV_LOG_INFO, "devices %d\n",count);
+	test_cap_from_device();
+	//int count = ffCapDevicesList(avds, 8);
+	//av_log(NULL, AV_LOG_INFO, "devices %d\n",count);
 	//音频压缩测试
 	/*
 	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.m4a",
