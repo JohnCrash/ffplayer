@@ -788,8 +788,10 @@ namespace ff
 					if (pec->encode_video)
 					{
 						ret = write_video_frame(pec, praw);
-						if (ret < 0)
+						if (ret < 0){
+							release_raw(praw);
 							break;
+						}
 					}
 				}
 				else if (praw->type == RAW_AUDIO)
@@ -797,8 +799,10 @@ namespace ff
 					if (pec->encode_audio)
 					{
 						ret = write_audio_frame(pec, praw);
-						if (ret < 0)
+						if (ret < 0){
+							release_raw(praw);
 							break;
+						}
 					}
 				}
 				else
@@ -806,7 +810,6 @@ namespace ff
 					av_log(NULL, AV_LOG_FATAL, "Unknow raw type.\n");
 					break;
 				}
-
 				release_raw(praw);
 			}
 			else
