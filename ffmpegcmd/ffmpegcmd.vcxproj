@@ -53,7 +53,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_LIB;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;_USE_MATH_DEFINES;inline=__inline;vsnprintf=avpriv_vsnprintf;_snprintf=avpriv_snprintf;snprintf=avpriv_snprintf;strtod=avpriv_strtod;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\..\cocos2d-x\external\ffmpeg\prebuilt\win32;..\..\cocos2d-x\external\ffmpeg\include;G:\source\ffplay\Classes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\ffmpeg-lf\build\win32;..\..\ffmpeg-lf\build\include;..\Classes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OmitFramePointers>true</OmitFramePointers>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>

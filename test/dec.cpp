@@ -1,5 +1,7 @@
 #include "ffenc.h"
 
+namespace ff
+{
 AVDictionary *codec_opts = NULL;
 
 void av_log_error(int err)
@@ -497,4 +499,5 @@ int read_trancode(const char *filename, const char *outfile)
 	avformat_close_input(&ic);
 
 	return 0;
+}
 }

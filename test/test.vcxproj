@@ -93,6 +93,7 @@
     <ClInclude Include="ffdec.h" />
     <ClInclude Include="ffenc.h" />
     <ClInclude Include="ffraw.h" />
+    <ClInclude Include="live.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="transcode.h" />
@@ -114,6 +115,7 @@
     <ClCompile Include="ffdec.cpp" />
     <ClCompile Include="ffenc.cpp" />
     <ClCompile Include="ffraw.cpp" />
+    <ClCompile Include="live.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="test.cpp" />
     <ClCompile Include="transcode.cpp" />

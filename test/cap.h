@@ -5,7 +5,10 @@
  */
 #include <limits.h>
 #include <algorithm>
+#include "ffcommon.h"
 #include "ffraw.h"
+
+using namespace ::ff;
 
 namespace cv
 {

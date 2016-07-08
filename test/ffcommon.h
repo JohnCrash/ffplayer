@@ -43,6 +43,8 @@ extern "C"
 #include "libavutil/timestamp.h"
 }
 
+namespace ff
+{
 #define ERROR_BUFFER_SIZE 1024
 #define STREAM_DURATION   10.0
 #define STREAM_FRAME_RATE 25 /* 25 images/s */
@@ -51,31 +53,32 @@ extern "C"
 #define ALIGN32(x) FFALIGN(x,32)
 #define ALIGN16(x) FFALIGN(x,16)
 
-struct AVCtx
-{
-	AVStream * st;
-	AVFrame * frame;
+	struct AVCtx
+	{
+		AVStream * st;
+		AVFrame * frame;
 
-	int64_t next_pts;
-	int samples_count;
+		int64_t next_pts;
+		int samples_count;
 
-	SwrContext *swr_ctx;
-	SwsContext *sws_ctx;
-};
+		SwrContext *swr_ctx;
+		SwsContext *sws_ctx;
+	};
 
-typedef std::mutex mutex_t;
-typedef std::condition_variable condition_t;
-typedef std::unique_lock<std::mutex> mutex_lock_t;
+	typedef std::mutex mutex_t;
+	typedef std::condition_variable condition_t;
+	typedef std::unique_lock<std::mutex> mutex_lock_t;
 
-/*
-* 初始化ff库,注册设备，初始网络。
-*/
-void ffInit();
+	/*
+	* 初始化ff库,注册设备，初始网络。
+	*/
+	void ffInit();
 
-AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
-	uint64_t channel_layout,
-	int sample_rate, int nb_samples);
+	AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
+		uint64_t channel_layout,
+		int sample_rate, int nb_samples);
 
-AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height);
+	AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height);
+}
 
 #endif
