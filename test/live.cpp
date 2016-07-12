@@ -5,10 +5,12 @@
 
 namespace ff
 {
+#define AUDIO_CHANNEL 1
+#define AUDIO_CHANNELBIT 16
 #define MAX_NSYN 30
 #define MAX_ASYN 2
 
-	static void liveLoop(AVDecodeCtx * pdc,AVEncodeContext * pec,liveCB cb)
+	static void liveLoop(AVDecodeCtx * pdc, AVEncodeContext * pec, liveCB cb, liveState* pls)
 	{
 		int ret, nsyn,ncsyn,nsynacc;
 		AVRational audio_time_base, video_time_base;
@@ -58,8 +60,10 @@ namespace ff
 					ncsyn = nsynp - nsynacc;
 					nsynacc += ncsyn;
 				}
-				else
+				else if (nsyn >= 0)
 					ncsyn = 0;
+				else
+					ncsyn = -1;
 
 				if (ncsyn >= 0 && ncsyn < MAX_NSYN ){
 					av_log(NULL, AV_LOG_INFO, "ncsyn = %d\n",ncsyn );
@@ -111,7 +115,16 @@ namespace ff
 					nsyn, dsyn, (double)ffGetBufferSizeKB(pec)/1024.0);
 #endif
 			}
-
+			/*
+			 * 回调
+			 */
+			if (nframe % 8 == 0){
+				if (cb && pls){
+					pls->nframes = nframe;
+					pls->ntimes = ctimer - stimer;
+					if (cb(pls))break;
+				}
+			}
 			release_raw(praw);
 		}
 		release_raw(praw);
@@ -119,8 +132,8 @@ namespace ff
 
 	void liveOnRtmp(
 		const char * rtmp_publisher,
-		const char * camera_name, int w, int h, int fps,int vbitRate,
-		const char * phone_name, int ch, int bit, int rate,int abitRate,
+		const char * camera_name, int w, int h, int fps, const char * pix_fmt_name, int vbitRate,
+		const char * phone_name, int rate, const char * sample_fmt_name, int abitRate,
 		liveCB cb)
 	{
 		AVDecodeCtx * pdc = NULL;
@@ -128,6 +141,31 @@ namespace ff
 		AVDictionary *opt = NULL;
 		AVRational afps = AVRational{ fps, 1 };
 		AVCodecID vid, aid;
+		AVPixelFormat pixFmt = av_get_pix_fmt(pix_fmt_name);
+		AVSampleFormat sampleFmt = av_get_sample_fmt(sample_fmt_name);
+		liveState state;
+
+		memset(&state, 0, sizeof(state));
+		static auto log_cb = [&](void * acl, int level, const char *format, va_list arg)->void
+		{
+			if (level == AV_LOG_ERROR || level == AV_LOG_FATAL){
+				if (state.nerror<4)
+					snprintf(state.errorMsg[state.nerror++], 256, format, arg);
+			}
+			av_log_default_callback(acl,level,format,arg);
+		};
+
+		if (cb){
+			state.state = LIVE_BEGIN;
+			cb(&state);
+		}
+
+		av_log_set_callback(
+			[](void * acl, int level, const char *format, va_list arg)->void
+				{
+					log_cb(acl, level, format, arg);
+				}
+			);
 		av_dict_set(&opt, "strict", "-2", 0);
 		av_dict_set(&opt, "threads", "4", 0);
 
@@ -138,15 +176,30 @@ namespace ff
 			vid = camera_name ? AV_CODEC_ID_H264 : AV_CODEC_ID_NONE;
 			aid = phone_name ? AV_CODEC_ID_AAC : AV_CODEC_ID_NONE;
 			pec = ffCreateEncodeContext(rtmp_publisher, "flv", w, h, afps, vbitRate, vid,
-				rate, abitRate, aid, opt);
-			if (!pec)break;
+				w, h, pixFmt,
+				rate, abitRate, aid,
+				AUDIO_CHANNEL, rate, sampleFmt,
+				opt);
+			if (!pec){
+				if (cb){
+					state.state = LIVE_ERROR;
+					cb(&state);
+				}
+				break;
+			}
 			/*
 			 * 初始化解码器
 			 */
-			pdc = ffCreateCapDeviceDecodeContext(camera_name, w, h, fps, phone_name, ch, bit, rate, opt);
-			if (!pdc)break;
+			pdc = ffCreateCapDeviceDecodeContext(camera_name, w, h, fps, pixFmt, phone_name, AUDIO_CHANNEL, AUDIO_CHANNELBIT, rate, opt);
+			if (!pdc){
+				if (cb){
+					state.state = LIVE_ERROR;
+					cb(&state);
+				}
+				break;
+			}
 
-			liveLoop(pdc,pec,cb);
+			liveLoop(pdc,pec,cb,&state);
 			break;
 		}
 
@@ -158,6 +211,15 @@ namespace ff
 			ffCloseDecodeContext(pdc);
 		}
 
+		if (cb){
+			if (state.nerror){
+				state.state = LIVE_ERROR;
+				cb(&state);
+			}
+			state.state = LIVE_END;
+			cb(&state);
+		}
+		av_log_set_callback(av_log_default_callback);
 		av_dict_free(&opt);
 	}
 }

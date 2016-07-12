@@ -128,7 +128,10 @@ namespace ff
 			fps = cap->getProperty(cv::CV_CAP_PROP_FPS);
 			AVEncodeContext* pec = ffCreateEncodeContext("rtmp://localhost/myapp/mystream", "flv",
 				w, h, { fps, 1 }, 400000, AV_CODEC_ID_H264,
-				SAMPLE_RATE, 64000, AV_CODEC_ID_NONE, opt);
+				w,h,AV_PIX_FMT_YUV420P,
+				SAMPLE_RATE, 64000, AV_CODEC_ID_NONE,
+				2,44100,AV_SAMPLE_FMT_S16,
+				opt);
 			/*
 			AVEncodeContext* pec = ffCreateEncodeContext("g:\\test_video\\vfwcap.mp4", NULL,
 			w, h, { fps,1 }, 400000, AV_CODEC_ID_H264,
@@ -214,7 +217,7 @@ namespace ff
 				audio_name = caps[m].alternative_name;
 			}
 		}
-		pdc = ffCreateCapDeviceDecodeContext(video_name, 640, 480, 30, audio_name, 2, 16, 44100, opt);
+		pdc = ffCreateCapDeviceDecodeContext(video_name, 640, 480, 30,AV_PIX_FMT_YUV420P, audio_name, 2, 16, 44100, opt);
 		if (pdc)
 		{
 			if (!pdc->has_audio)
@@ -259,7 +262,11 @@ namespace ff
 			i = 1;
 			AVRational fps = ffGetFrameRate(pdc);
 
-			pec = ffCreateEncodeContext(output, fmt, w, h, fps, bitRate, video_id, sampleRate, audioBitRate, audio_id, opt);
+			pec = ffCreateEncodeContext(output, fmt, w, h, fps, bitRate, video_id, 
+				w,h,AV_PIX_FMT_YUV420P,
+				sampleRate, audioBitRate, audio_id,
+				2, 44100, AV_SAMPLE_FMT_S16,
+				opt);
 			if (pec)
 			{
 				/*
@@ -397,7 +404,7 @@ namespace ff
 				audio_name = caps[m].alternative_name;
 			}
 		}
-		pdc = ffCreateCapDeviceDecodeContext(video_name, 640, 480, 30, audio_name, 2, 16, 44100, opt);
+		pdc = ffCreateCapDeviceDecodeContext(video_name, 640, 480, 30, AV_PIX_FMT_YUV420P, audio_name, 2, 16, 44100, opt);
 		if (pdc)
 		{
 			if (!pdc->has_audio)
@@ -506,6 +513,17 @@ namespace ff
 
 using namespace ::ff;
 
+static int liveCallback(liveState *pls)
+{
+	printf("live state : %d\n", pls->state);
+	if (pls->state == LIVE_ERROR){
+		for (int i = 0; i < pls->nerror; i++){
+			printf(pls->errorMsg[i]);
+		}
+	}
+	return 0;
+}
+
 int _tmain(int argc, _TCHAR* argv[])
 {
 	AVDevice caps[8];
@@ -514,18 +532,85 @@ int _tmain(int argc, _TCHAR* argv[])
 	int count = ffCapDevicesList(caps, 8);
 	char * video_name = NULL;
 	char * audio_name = NULL;
+	int vindex = 0;
+	if (argc>1 && argv[1]){
+		vindex = _wtoi(argv[1]);
+	}
+	int vi = 0;
 	for (int m = 0; m < count; m++){
 		if (!video_name && caps[m].type == AV_DEVICE_VIDEO){
-			video_name = caps[m].alternative_name;
+			if (vi == vindex){
+				video_name = caps[m].alternative_name;
+				printf("select : %s\n", caps[m].name);
+			}
+			vi++;
 		}
 		else if (!audio_name && caps[m].type == AV_DEVICE_AUDIO){
 			audio_name = caps[m].alternative_name;
 		}
+		if (argc == 1){
+			printf("device name : %s \n %s\n", caps[m].name,caps[m].alternative_name);
+			
+			for (int i = 0; i < caps[m].capability_count; i++){
+				if (caps[m].type == AV_DEVICE_VIDEO){
+					int min_w = caps[m].capability[i].video.min_w;
+					int min_h = caps[m].capability[i].video.min_h;
+					int min_fps = caps[m].capability[i].video.min_fps;
+					int max_w = caps[m].capability[i].video.max_w;
+					int max_h = caps[m].capability[i].video.max_h;
+					int max_fps = caps[m].capability[i].video.max_fps;
+					char * pix = caps[m].capability[i].video.pix_format;
+					char * name = caps[m].capability[i].video.codec_name;
+					printf("min w = %d min h = %d min fps = %d "
+						"max w = %d max h = %d max fps = %d "
+						"fmt = %s\n",
+						min_w, min_h, min_fps,
+						max_w, max_h, max_fps,
+						pix);
+				}
+				else{
+					int min_ch = caps[m].capability[i].audio.min_ch;
+					int min_bit = caps[m].capability[i].audio.min_bit;
+					int min_rate = caps[m].capability[i].audio.min_rate;
+					int max_ch = caps[m].capability[i].audio.max_ch;
+					int max_bit = caps[m].capability[i].audio.max_bit;
+					int max_rate = caps[m].capability[i].audio.max_rate;
+					char * fmt = caps[m].capability[i].audio.sample_format;
+					char * name = caps[m].capability[i].audio.codec_name;
+					printf("min ch = %d min bit = %d min samples = %d "
+						"max ch = %d max bit = %d max samples = %d "
+						"fmt = %s\n",
+						min_ch, min_bit, min_rate,
+						max_ch, max_bit, max_rate,
+						fmt);
+				}
+			}
+		}
 	}
-	liveOnRtmp("rtmp://localhost/myapp/mystream",
-		video_name,640,480,30,1024*1024,
-		audio_name,2,16,44100,128*1024,
-		NULL);
+	char fmt_name[256];
+	int w, h, fps;
+	w = 640;
+	h = 480;
+	fps = 30;
+	if(argc>2 && argv[2]){
+		memset(fmt_name, 0, 255);
+		TCHAR * p = argv[2];
+		for (int i = 0; i < 254; i++){
+			if (p[i] != 0)
+				fmt_name[i] = (char)p[i];
+		}
+	}else{
+		strcpy(fmt_name, "yuv420p");
+	}
+	if(argc>5 && argv[3] && argv[4] && argv[5]){
+		w = _wtoi(argv[3]);
+		h = _wtoi(argv[4]);
+		fps = _wtoi(argv[5]);
+	}
+	liveOnRtmp("rtmp://192.168.7.157/myapp/mystream",
+		video_name,w,h,fps,fmt_name,1024*1024,
+		audio_name,22050,"s16",128*1024,
+		liveCallback);
 #if 0
 	AVDictionary * opt = NULL;
 	int i, j;

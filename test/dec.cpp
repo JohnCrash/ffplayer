@@ -253,7 +253,7 @@ int read_media_file(const char *filename, const char *outfile)
 			printf("Error muxing packet\n");
 			break;
 		}
-		av_free_packet(pkt);
+		av_packet_unref(pkt);
 	}
 	printf("total size : %d bytes\ntotal frame : %d\n", total_size,total_frame);
 	avformat_close_input(&ic);
@@ -424,7 +424,10 @@ int read_trancode(const char *filename, const char *outfile)
 	rat.den = 1;
 	AVEncodeContext* pec = ffCreateEncodeContext("g:\\test.mp4",NULL,
 		w, h, rat, 100000, w == 0 ? AV_CODEC_ID_NONE : AV_CODEC_ID_MPEG4,
-		sample_rate, 64000, sample_rate==0? AV_CODEC_ID_NONE: AV_CODEC_ID_AAC, opt);
+		w,h,AV_PIX_FMT_YUV420P,
+		sample_rate, 64000, sample_rate==0? AV_CODEC_ID_NONE: AV_CODEC_ID_AAC, 
+		2, 44100, AV_SAMPLE_FMT_S16,
+		opt);
 
 	av_log_streams(ic);
 
@@ -489,7 +492,7 @@ int read_trancode(const char *filename, const char *outfile)
 			pkt->duration = av_rescale_q(pkt->duration, in_stream->time_base, out_stream->time_base);
 			pkt->pos = -1;
 			*/
-			av_free_packet(pkt);
+			av_packet_unref(pkt);
 		}
 		ffFlush(pec);
 		ffCloseEncodeContext(pec);

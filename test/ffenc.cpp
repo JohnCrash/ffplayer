@@ -139,12 +139,15 @@ namespace ff
 	/*
 	 * 打开视频编码器
 	 */
-	static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id, AVDictionary *opt_arg)
+	static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,
+		int in_w,int in_h,AVPixelFormat in_fmt, //FIXME: 添加不同尺寸和格式进行转换的代码
+		AVDictionary *opt_arg)
 	{
 		int ret;
 		AVCodecContext *c = pec->_video_st->codec;
 		AVDictionary *opt = NULL;
 		AVCodec *codec;
+		int w, h, fmt;
 
 		codec = avcodec_find_encoder(video_codec_id);
 		if (!codec)
@@ -173,6 +176,15 @@ namespace ff
 			return -1;
 		}
 
+		if (c->width != in_w || c->height != in_h || in_fmt != c->pix_fmt){
+			pec->_vctx.sws_ctx = sws_getContext(in_w, in_h, in_fmt, 
+				c->width, c->height, c->pix_fmt, 
+				SCALE_FLAGS, NULL, NULL, NULL);
+			if (!pec->_vctx.sws_ctx){
+				av_log(NULL, AV_LOG_FATAL, "Could not initialize the conversion context,in_w=%d,in_h=%d,in_fmt=%d\n", in_w, in_h, in_fmt);
+				return -1;
+			}
+		}
 		return 0;
 	}
 
@@ -210,7 +222,9 @@ namespace ff
 	/*
 	 * 打开音频编码器
 	 */
-	static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, AVDictionary *opt_arg)
+	static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, 
+		int in_ch,int in_rate,AVSampleFormat in_fmt,
+		AVDictionary *opt_arg)
 	{
 		AVCodecContext *c;
 		int nb_samples;
@@ -259,9 +273,9 @@ namespace ff
 		}
 
 		/* set options */
-		av_opt_set_int(pec->_actx.swr_ctx, "in_channel_count", c->channels, 0);
-		av_opt_set_int(pec->_actx.swr_ctx, "in_sample_rate", c->sample_rate, 0);
-		av_opt_set_sample_fmt(pec->_actx.swr_ctx, "in_sample_fmt", AV_SAMPLE_FMT_S16, 0);
+		av_opt_set_int(pec->_actx.swr_ctx, "in_channel_count", in_ch, 0);
+		av_opt_set_int(pec->_actx.swr_ctx, "in_sample_rate", in_rate, 0);
+		av_opt_set_sample_fmt(pec->_actx.swr_ctx, "in_sample_fmt", in_fmt, 0);
 		av_opt_set_int(pec->_actx.swr_ctx, "out_channel_count", c->channels, 0);
 		av_opt_set_int(pec->_actx.swr_ctx, "out_sample_rate", c->sample_rate, 0);
 		av_opt_set_sample_fmt(pec->_actx.swr_ctx, "out_sample_fmt", c->sample_fmt, 0);
@@ -447,7 +461,7 @@ namespace ff
 		/*
 		 * 编码器要求的格式和输入格式相同，这里不需要进行复杂转换。
 		 */
-		if (praw->format == c->pix_fmt && praw->width == c->width&&praw->height == c->height)
+		if (!ctx->sws_ctx)
 		{
 			/*
 			 * 如果格式相同可以进去简单的拷贝
@@ -475,22 +489,6 @@ namespace ff
 		}
 		else
 		{
-			/*
-			 * 初始化格式转换上下文
-			 */
-			if (!ctx->sws_ctx)
-			{
-				ctx->sws_ctx = sws_getContext(praw->width, praw->height,
-					(AVPixelFormat)praw->format,
-					c->width, c->height,
-					c->pix_fmt,
-					SCALE_FLAGS, NULL, NULL, NULL);
-				if (!ctx->sws_ctx) {
-					av_log(NULL, AV_LOG_FATAL, "Could not initialize the conversion context\n");
-					return NULL;
-				}
-			}
-
 			sws_scale(ctx->sws_ctx,
 				(const uint8_t * const *)praw->data, praw->linesize,
 				0, praw->height, frame->data, frame->linesize);
@@ -831,7 +829,10 @@ namespace ff
 	 */
 	AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 		int w, int h, AVRational frameRate, int videoBitRate, AVCodecID video_codec_id,
-		int sampleRate, int audioBitRate, AVCodecID audio_codec_id, AVDictionary * opt_arg)
+		int in_w, int in_h, AVPixelFormat in_fmt,
+		int sampleRate, int audioBitRate, AVCodecID audio_codec_id,
+		int in_ch, int in_sampleRate, AVSampleFormat in_sampleFmt,
+		AVDictionary * opt_arg)
 	{
 		AVEncodeContext * pec;
 		AVFormatContext *ofmt_ctx;
@@ -889,7 +890,9 @@ namespace ff
 		 */
 		if (pec->has_video)
 		{
-			if (open_video(pec, video_codec_id, opt_arg) < 0)
+			if (open_video(pec, video_codec_id, 
+				in_w,in_h,in_fmt,
+				opt_arg) < 0)
 			{
 				ffCloseEncodeContext(pec);
 				return NULL;
@@ -898,7 +901,9 @@ namespace ff
 		}
 		if (pec->has_audio)
 		{
-			if (open_audio(pec, audio_codec_id, opt_arg) < 0)
+			if (open_audio(pec, audio_codec_id, 
+				in_ch,in_sampleRate,in_sampleFmt,
+				opt_arg) < 0)
 			{
 				ffCloseEncodeContext(pec);
 				return NULL;

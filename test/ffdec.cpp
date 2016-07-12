@@ -306,7 +306,7 @@ namespace ff
 					praw->pts = frame->pkt_pts;
 					praw->time_base = ctx->pkt_timebase;
 					av_image_copy(praw->data, praw->linesize, (const uint8_t **)frame->data, frame->linesize, ctx->pix_fmt, ctx->width, ctx->height);
-					av_free_packet(&pkt);
+					av_packet_unref(&pkt);
 					return praw;
 				}
 			}
@@ -322,12 +322,12 @@ namespace ff
 					praw->pts = frame->pkt_pts;
 					praw->time_base = ctx->pkt_timebase;
 					av_samples_copy(praw->data, frame->data, 0, 0, frame->nb_samples, frame->channels, ctx->sample_fmt);
-					av_free_packet(&pkt);
+					av_packet_unref(&pkt);
 					return praw;
 				}
 			}
 
-			av_free_packet(&pkt);
+			av_packet_unref(&pkt);
 		}
 		return NULL;
 	}
@@ -482,7 +482,7 @@ namespace ff
 	}
 
 	AVDecodeCtx *ffCreateCapDeviceDecodeContext(
-		const char *video_device, int w, int h, int fps,
+		const char *video_device, int w, int h, int fps,AVPixelFormat fmt,
 		const char *audio_device, int chancel, int bit, int rate, AVDictionary * opt)
 	{
 		char buf[32];
@@ -521,7 +521,8 @@ namespace ff
 			snprintf(buf, 32, "%d", rate);
 			av_dict_set(&opt, "sample_rate", buf, 0);
 		}
-
+		snprintf(buf, 32, "%d", fmt);
+		av_dict_set(&opt, "pixel_format", buf, 0);
 		return ffCreateDecodeContext(filename, opt);
 	}
 }

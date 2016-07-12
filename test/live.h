@@ -3,9 +3,19 @@
 
 namespace ff
 {
+	enum cbType{
+		LIVE_BEGIN,
+		LIVE_END,
+		LIVE_ERROR,
+		LIVE_INFO,
+	};
 	struct liveState
 	{
-
+		cbType state; 
+		int64_t nframes; //发送的帧数
+		int64_t ntimes; //直播的时间单位ns
+		int nerror; //错误数量
+		char errorMsg[4][256]; //错误信息
 	};
 
 	typedef int(*liveCB)(liveState * pls);
@@ -15,8 +25,8 @@ namespace ff
 	 */
 	void liveOnRtmp(
 		const char * rtmp_publisher,
-		const char * camera_name, int w, int h, int fps, int vbitRate,
-		const char * phone_name, int ch, int bit, int rate, int abitRate,
+		const char * camera_name, int w, int h, int fps, const char * pix_fmt_name,int vbitRate,
+		const char * phone_name, int rate, const char * sample_fmt_name, int abitRate,
 		liveCB cb);
 
 #define MAX_DEVICE_NAME_LENGTH 256

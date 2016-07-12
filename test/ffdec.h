@@ -39,7 +39,7 @@ namespace ff
 	 * 创建一个设备解码器，通过设备名称
 	 */
 	AVDecodeCtx *ffCreateCapDeviceDecodeContext(
-		const char *video_device, int w, int h, int fps,
+		const char *video_device, int w, int h, int fps, AVPixelFormat fmt,
 		const char *audio_device, int chancel, int bit, int rate,
 		AVDictionary * opt);
 
