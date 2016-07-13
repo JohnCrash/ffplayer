@@ -370,11 +370,22 @@ namespace ff
 
 	void ffFlush(AVEncodeContext *pec)
 	{
-		mutex_lock_t lock(*pec->_mutex);
-		pec->_isflush = 1;
-		pec->_cond->notify_one();
+		AVCtx * pctx;
+		if(pec->has_audio){
+			pctx = &pec->_actx;
+			mutex_lock_t lock(*pctx->mutex);
+			pctx->isflush = 1;
+			pctx->cond->notify_one();
+		}
+		if (pec->has_video){
+			pctx = &pec->_vctx;
+			mutex_lock_t lock(*pctx->mutex);
+			pctx->isflush = 1;
+			pctx->cond->notify_one();
+		}
 	}
 
+#if 0
 	static AVRaw * ffPopFrame(AVEncodeContext * pec)
 	{
 		mutex_lock_t lock(*pec->_mutex);
@@ -452,6 +463,7 @@ namespace ff
 		}
 		return praw;
 	}
+#endif
 
 	static AVFrame * make_video_frame(AVCtx * ctx, AVRaw * praw)
 	{
@@ -498,8 +510,22 @@ namespace ff
 		}
 	}
 
-	static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt)
+	int ffIsWaitingOrStop(AVEncodeContext *pec)
 	{
+		if (pec->has_audio){
+			if (pec->_actx.encode_waiting || pec->_actx.stop_thread)
+				return 1;
+		}
+		if (pec->has_video){
+			if (pec->_vctx.encode_waiting || pec->_vctx.stop_thread)
+				return 1;
+		}
+		return 0;
+	}
+
+	static int write_frame(AVEncodeContext *pec,AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt)
+	{
+		mutex_lock_t lock(*pec->write_mutex);
 		/* rescale output packet timestamp values from codec to stream timebase */
 		av_packet_rescale_ts(pkt, *time_base, st->time_base);
 		pkt->stream_index = st->index;
@@ -519,19 +545,20 @@ namespace ff
 		int ret;
 		AVCodecContext *c;
 		AVStream * st;
-		AVFrame *frame;
+		AVFrame *frame = NULL;
 		int got_packet = 0;
 
 		c = pec->_video_st->codec;
 		st = pec->_video_st;
-
 		for (int i = 0; i < praw->recount; i++){
-			frame = make_video_frame(&pec->_vctx, praw);
 
 			if (!frame)
-			{
+				frame = make_video_frame(&pec->_vctx, praw);
+			else
+				frame->pts = pec->_vctx.next_pts++;
+
+			if (!frame)
 				return -1;
-			}
 
 			//		printf("video pts = %I64d, %I64d\n", praw->pts, frame->pts);
 
@@ -549,9 +576,8 @@ namespace ff
 				pkt.size = sizeof(AVPicture);
 
 				pkt.pts = pkt.dts = frame->pts;
-				av_packet_rescale_ts(&pkt, c->time_base, st->time_base);
 
-				ret = av_interleaved_write_frame(pec->_ctx, &pkt);
+				ret = write_frame(pec, pec->_ctx, &c->time_base, st, &pkt);
 			}
 			else {
 				AVPacket pkt = { 0 };
@@ -571,7 +597,7 @@ namespace ff
 				int64_t e = av_gettime_relative();
 				
 				if (got_packet) {
-					ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+					ret = write_frame(pec,pec->_ctx, &c->time_base, st, &pkt);
 				}
 				else {
 					ret = 0;
@@ -693,6 +719,7 @@ namespace ff
 		/*
 		 * 将音频数据放入采样器，如果有成功取得输出帧，就继续写入
 		 */
+		int64_t b = av_gettime_relative();
 		result = resample_audio_frame(&pec->_actx, praw, &frame);
 
 		while (result >= 0 && frame){
@@ -712,7 +739,7 @@ namespace ff
 			}
 
 			if (got_packet) {
-				ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+				ret = write_frame(pec,pec->_ctx, &c->time_base, st, &pkt);
 				if (ret < 0) {
 					char errmsg[ERROR_BUFFER_SIZE];
 					av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
@@ -721,16 +748,18 @@ namespace ff
 					return -1;
 				}
 			}
+
 			/*
 			 * 继续如果采样器中还有足够的数据，就继续读取下一个帧
 			 */
 			result = flush_audio_frame(&pec->_actx, &frame);
 		}
-
+		int64_t e = av_gettime_relative();
+		av_log(NULL, AV_LOG_INFO, "Audio %I64d\n", e - b);
 		return (frame || got_packet) ? 0 : 1;
 	}
 
-	static void write_delay_frame(AVEncodeContext *pec)
+	static void write_delay_audio_frame(AVEncodeContext *pec)
 	{
 		int ret;
 		AVCodecContext *c;
@@ -749,10 +778,18 @@ namespace ff
 					break;
 				}
 				if (got_packet){
-					ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+					ret = write_frame(pec,pec->_ctx, &c->time_base, st, &pkt);
 				}
 			}
 		}
+	}
+
+	static void write_delay_video_frame(AVEncodeContext *pec)
+	{
+		int ret;
+		AVCodecContext *c;
+		AVStream * st;
+		int got_packet = 1;
 
 		if (pec->has_video && pec->_video_st){
 			c = pec->_video_st->codec;
@@ -766,15 +803,99 @@ namespace ff
 					break;
 				}
 				if (got_packet){
-					ret = write_frame(pec->_ctx, &c->time_base, st, &pkt);
+					ret = write_frame(pec,pec->_ctx, &c->time_base, st, &pkt);
 				}
 			}
 		}
 	}
 
+	static AVRaw * popFromList(AVCtx * pctx)
+	{
+		AVRaw * praw = NULL;
+		mutex_lock_t lock(*pctx->mutex);
+		pctx->encode_waiting = 1;
+
+		while ( !pctx->head && !pctx->isflush ){
+			pctx->cond->wait(lock);
+		}
+		pctx->encode_waiting = 0;
+		
+		if (pctx->isflush)return NULL;
+
+		praw = list_pop_raw(&pctx->head, &pctx->tail);
+		
+		return praw;
+	}
+
+	static int video_encode_thread_proc(AVEncodeContext * pec)
+	{
+		int ret;
+		AVRaw * praw;
+		AVCtx * pctx = &pec->_vctx;
+
+		while (!pctx->stop_thread)
+		{
+			praw = popFromList(pctx);
+
+			if (praw){
+				pec->_nb_raws--;
+				pec->_buffer_size -= getAVRawSizeKB(praw);
+				ret = write_video_frame(pec, praw);
+				if (ret < 0){
+					release_raw(praw);
+					break;
+				}
+				release_raw(praw);
+			}
+			else {
+				/*
+				* 如果返回NULL表示已经没有数据了。
+				* 写入延时帧
+				*/
+				write_delay_video_frame(pec);
+				break;
+			}
+		}
+		pctx->stop_thread = 1;
+		return 0;
+	}
+
+	static int audio_encode_thread_proc(AVEncodeContext * pec)
+	{
+		int ret;
+		AVRaw * praw;
+		AVCtx * pctx = &pec->_actx;
+
+		while (!pctx->stop_thread)
+		{
+			praw = popFromList( pctx );
+
+			if (praw){
+				pec->_nb_raws--;
+				pec->_buffer_size -= getAVRawSizeKB(praw);
+				ret = write_audio_frame(pec, praw);
+				if (ret < 0){
+					release_raw(praw);
+					break;
+				}
+				release_raw(praw);
+			}
+			else {
+				/*
+				* 如果返回NULL表示已经没有数据了。
+				* 写入延时帧
+				*/
+				write_delay_audio_frame(pec);
+				break;
+			}
+		}
+		pctx->stop_thread = 1;
+		return 0;
+	}
 	/*
 	 * 编码写入线程
 	 */
+#if 0
 	int encode_thread_proc(AVEncodeContext * pec)
 	{
 		int ret;
@@ -829,6 +950,13 @@ namespace ff
 		}
 		pec->_stop_thread = 1;
 		return 0;
+	}
+#endif
+	static void initAVCtx(AVEncodeContext *pec,AVCtx * pctx, int(*encode_thread_proc)(AVEncodeContext *))
+	{
+		pctx->mutex = new mutex_t();
+		pctx->cond = new condition_t();
+		pctx->encode_thread = new std::thread(encode_thread_proc, pec);
 	}
 
 	/**
@@ -945,9 +1073,14 @@ namespace ff
 		/*
 		 * 启动压缩压缩线程
 		 */
-		pec->_mutex = new mutex_t();
-		pec->_cond = new condition_t();
-		pec->_encode_thread = new std::thread(encode_thread_proc, pec);
+		pec->write_mutex = new mutex_t();
+
+		if (pec->has_audio)
+			initAVCtx(pec, &pec->_actx, audio_encode_thread_proc);
+
+		if (pec->has_video)
+			initAVCtx(pec, &pec->_vctx, video_encode_thread_proc);
+
 		return pec;
 	}
 
@@ -960,6 +1093,18 @@ namespace ff
 		if (ctx->sws_ctx)
 			sws_freeContext(ctx->sws_ctx);
 	}
+
+	static void ffStopThreadAVCtx(AVCtx *ctx)
+	{
+		if (ctx->encode_thread){
+			ctx->cond->notify_one();
+			ctx->encode_thread->join();
+			delete ctx->mutex;
+			delete ctx->cond;
+			delete ctx->encode_thread;
+		}
+	}
+
 	/**
 	* 关闭编码上下文
 	*/
@@ -970,14 +1115,9 @@ namespace ff
 			/*
 			 * 停止压缩线程,压缩在没有数据可处理并且_encode_thread=1是退出
 			 */
-			if (pec->_encode_thread)
-			{
-				pec->_cond->notify_one();
-				pec->_encode_thread->join();
-				delete pec->_mutex;
-				delete pec->_cond;
-				delete pec->_encode_thread;
-			}
+			ffStopThreadAVCtx(&pec->_actx);
+			ffStopThreadAVCtx(&pec->_vctx);
+
 			if (pec->_ctx)
 			{
 				if (pec->isopen)
@@ -1009,6 +1149,8 @@ namespace ff
 
 			ffFreeAVCtx(&pec->_vctx);
 			ffFreeAVCtx(&pec->_actx);
+			
+			delete pec->write_mutex;
 
 			free((void*)pec->_fileName);
 			free(pec);
@@ -1027,31 +1169,33 @@ namespace ff
 
 	int ffAddFrame(AVEncodeContext *pec, AVRaw *praw)
 	{
-		if (pec->_stop_thread)
+		AVCtx * pctx;
+
+		if (praw->type == RAW_IMAGE){
+			pctx = &pec->_vctx;
+			if (!pec->has_video)
+				return 0; //igrone
+		}
+		else if (praw->type == RAW_AUDIO){
+			pctx = &pec->_actx;
+			if (!pec->has_audio)
+				return 0; //igrone
+		}
+		else
 		{
-			av_log(NULL, AV_LOG_FATAL, "ffAddFrame encode thread already stoped.\n");
+			av_log(NULL, AV_LOG_FATAL, "ffAddFrame unknow type of AVRaw\n");
+			return -1;
+		}
+		if (pctx->stop_thread){
+			av_log(NULL, AV_LOG_FATAL, "ffAddFrame %s encode thread already stoped.\n", praw->type == RAW_IMAGE?"video":"audio");
 			return -1;
 		}
 
-		mutex_lock_t lk(*pec->_mutex);
-
-		if (praw->type == RAW_IMAGE)
-		{
-			list_push_raw(&pec->_video_head, &pec->_video_tail, praw);
-			pec->_nb_raws++;
-			pec->_buffer_size += getAVRawSizeKB(praw);
-			pec->_cond->notify_one();
-		}
-		else if (praw->type == RAW_AUDIO)
-		{
-			list_push_raw(&pec->_audio_head, &pec->_audio_tail, praw);
-			pec->_nb_raws++;
-			pec->_buffer_size += getAVRawSizeKB(praw);
-			pec->_cond->notify_one();
-		}
-		else
-			av_log(NULL, AV_LOG_FATAL, "ffAddFrame unknow type of AVRaw\n");
-
+		mutex_lock_t lk(*pctx->mutex);
+		list_push_raw(&pctx->head, &pctx->tail, praw);
+		pec->_nb_raws++;
+		pec->_buffer_size += getAVRawSizeKB(praw);
+		pctx->cond->notify_one();
 		return 0;
 	}
 

@@ -53,6 +53,11 @@ namespace ff
 #define ALIGN32(x) FFALIGN(x,32)
 #define ALIGN16(x) FFALIGN(x,16)
 
+	struct AVRaw;
+	typedef std::mutex mutex_t;
+	typedef std::condition_variable condition_t;
+	typedef std::unique_lock<std::mutex> mutex_lock_t;
+
 	struct AVCtx
 	{
 		AVStream * st;
@@ -63,11 +68,18 @@ namespace ff
 
 		SwrContext *swr_ctx;
 		SwsContext *sws_ctx;
+
+		AVRaw * head;
+		AVRaw * tail;
+		std::thread * encode_thread;
+		int stop_thread;
+		mutex_t * mutex;
+		condition_t * cond;
+		int isflush;
+		int encode_waiting;
 	};
 
-	typedef std::mutex mutex_t;
-	typedef std::condition_variable condition_t;
-	typedef std::unique_lock<std::mutex> mutex_lock_t;
+
 
 	/*
 	* 初始化ff库,注册设备，初始网络。

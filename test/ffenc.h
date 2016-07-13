@@ -4,7 +4,7 @@
 #include "ffcommon.h"
 #include "ffraw.h"
 
-namespace ff
+namespace ff 
 {
 	int read_media_file(const char *filename, const char *outfile);
 	int read_trancode(const char *filename, const char *outfile);
@@ -22,19 +22,10 @@ namespace ff
 		AVCtx _actx;
 
 		int has_audio, has_video, encode_audio, encode_video, isopen;
-		int _isflush;
 		int _buffer_size; //原生数据缓冲区尺寸在kb
 		int _nb_raws; //原生数据帧个数
-		AVRaw * _video_head;
-		AVRaw * _video_tail;
-		AVRaw * _audio_head;
-		AVRaw * _audio_tail;
 
-		std::thread * _encode_thread;
-		int _stop_thread;
-		int _encode_waiting;
-		mutex_t *_mutex;
-		condition_t *_cond;
+		mutex_t * write_mutex;
 	};
 
 	/**
@@ -89,5 +80,7 @@ namespace ff
 	 * 取缓冲区大小
 	 */
 	int ffGetBufferSize(AVEncodeContext *pec);
+
+	int ffIsWaitingOrStop(AVEncodeContext *pec);
 }
 #endif

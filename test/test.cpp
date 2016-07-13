@@ -334,10 +334,8 @@ namespace ff
 						/*
 						* 压缩线程停止工作了或者编码器在等待喂数据就不再等待
 						*/
-						if (pec->_stop_thread || pec->_encode_waiting)
-						{
+						if (ffIsWaitingOrStop(pec))
 							break;
-						}
 						std::this_thread::sleep_for(std::chrono::milliseconds(10));
 					}
 					ret = ffAddFrame(pec, praw);
