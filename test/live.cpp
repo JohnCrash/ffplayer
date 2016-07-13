@@ -7,8 +7,8 @@ namespace ff
 {
 #define AUDIO_CHANNEL 1
 #define AUDIO_CHANNELBIT 16
-#define MAX_NSYN 30
-#define MAX_ASYN 2
+#define MAX_NSYN 120
+#define MAX_ASYN 5
 
 	static void liveLoop(AVDecodeCtx * pdc, AVEncodeContext * pec, liveCB cb, liveState* pls)
 	{
@@ -51,7 +51,7 @@ namespace ff
 						break;
 					}
 				}
-				else if ( nsyndt>0 && nsyn > 0 && nsynbt!=0 ){
+				else if ( nsyndt>0 && nsynbt!=0 ){
 					/*
 					 * 平滑补偿,起始时间nsynbt,在nsyndt时间里补偿nsyn帧数据
 					 */
@@ -60,17 +60,19 @@ namespace ff
 					ncsyn = nsynp - nsynacc;
 					nsynacc += ncsyn;
 				}
-				else if (nsyn >= 0)
-					ncsyn = 0;
 				else
-					ncsyn = -1;
+					ncsyn = 0;
 
 				if (ncsyn >= 0 && ncsyn < MAX_NSYN ){
-					av_log(NULL, AV_LOG_INFO, "ncsyn = %d\n",ncsyn );
+				//	av_log(NULL, AV_LOG_INFO, "ncsyn = %d\n",ncsyn );
 					praw->recount += ncsyn;
 					nframe += praw->recount;
 					if (ret = ffAddFrame(pec, praw) < 0)
 						break;
+#ifdef _DEBUG
+		//					av_log(NULL, AV_LOG_INFO, "[V] ncsyn:%d timestrap:%I64d time: %.4fs\n",
+		//						ncsyn, praw->pts, (double)(ctimer - stimer) / (double)AV_TIME_BASE);
+#endif
 				}
 				else if (ncsyn > MAX_NSYN){
 					av_log(NULL, AV_LOG_ERROR, "video frame make up error, nsyn > MAX_NSYN , ncsyn = %d\n", ncsyn);
@@ -78,8 +80,12 @@ namespace ff
 				}
 				else{
 					//丢弃多余的帧
-					av_log(NULL, AV_LOG_INFO, "discard video frame\n");
+		//			av_log(NULL, AV_LOG_INFO, "discard video frame\n");
 				}
+#ifdef _DEBUG
+		//		av_log(NULL, AV_LOG_INFO, "[V] ncsyn:%d timestrap:%I64d time: %.4fs\n",
+		//			ncsyn, praw->pts, (double)(ctimer - stimer) / (double)AV_TIME_BASE);
+#endif
 			}
 			else if (praw->type == RAW_AUDIO && pdc->has_audio){
 				if (begin_pts == 0){
@@ -97,9 +103,9 @@ namespace ff
 				nsyndt = av_rescale_q(praw->samples, audio_time_base, AVRational{ 1, AV_TIME_BASE });
 				nsyn = (int)av_rescale_q((at - vt), AVRational{ 1, AV_TIME_BASE }, video_time_base);
 				nsynbt = ctimer;
-				nsynacc = 0;
-				if (abs(nsyn) > MAX_NSYN){
-					av_log(NULL, AV_LOG_ERROR, "video frame synchronize error, nsyn > MAX_NSYN , nsyn = %d\n", nsyn);
+				nsyn += nsynacc;
+				if (abs(nsyn) > MAX_NSYN || abs(nsynacc) > MAX_NSYN ){
+					av_log(NULL, AV_LOG_ERROR, "video frame synchronize error, nsyn > MAX_NSYN , nsyn = %d nsynacc = %d\n", nsyn, nsynacc);
 					break;
 				}
 				/*
@@ -111,9 +117,12 @@ namespace ff
 					break;
 				}
 #ifdef _DEBUG
-				av_log(NULL, AV_LOG_INFO, "nsyn = %d , dsyn = %.4fs , buffer size = %.4fmb\n", 
-					nsyn, dsyn, (double)ffGetBufferSizeKB(pec)/1024.0);
+				av_log(NULL, AV_LOG_INFO, "[A] nsyn:%d dsyn:%.4fs acc=%d timestrap:%I64d time: %.4fs bs:%.2fmb\n",
+					nsyn, dsyn, nsynacc,praw->pts, (double)(ctimer - stimer) / (double)AV_TIME_BASE, (double)ffGetBufferSizeKB(pec) / 1024.0);
+				//av_log(NULL, AV_LOG_INFO, "nsyn:%d , dsyn:%.4fs , buffer size:%.4fmb\n", 
+				//	nsyn, dsyn, (double)ffGetBufferSizeKB(pec)/1024.0);
 #endif
+				nsynacc = 0;
 			}
 			/*
 			 * 回调

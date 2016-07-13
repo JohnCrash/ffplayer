@@ -515,7 +515,7 @@ using namespace ::ff;
 
 static int liveCallback(liveState *pls)
 {
-	printf("live state : %d\n", pls->state);
+//	printf("live state : %d\n", pls->state);
 	if (pls->state == LIVE_ERROR){
 		for (int i = 0; i < pls->nerror; i++){
 			printf(pls->errorMsg[i]);
@@ -609,7 +609,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 	liveOnRtmp("rtmp://192.168.7.157/myapp/mystream",
 		video_name,w,h,fps,fmt_name,1024*1024,
-		audio_name,22050,"s16",128*1024,
+		audio_name,22050,"s16",32*1024,
 		liveCallback);
 #if 0
 	AVDictionary * opt = NULL;

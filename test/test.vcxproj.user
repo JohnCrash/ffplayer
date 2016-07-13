@@ -5,9 +5,12 @@
     </LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsRemoteDebugger</DebuggerFlavor>
     <RemoteDebuggerCommand>c:\Users\17xuexi\Desktop\test\test.exe</RemoteDebuggerCommand>
-    <RemoteDebuggerServerName>192.168.4.40:4019</RemoteDebuggerServerName>
+    <RemoteDebuggerServerName>172.25.201.2:4019</RemoteDebuggerServerName>
     <RemoteDebuggerConnection>RemoteWithoutAuthentication</RemoteDebuggerConnection>
     <DeploymentDirectory>c:\Users\17xuexi\Desktop\test</DeploymentDirectory>
     <RemoteDebuggerWorkingDirectory>c:\Users\17xuexi\Desktop\test</RemoteDebuggerWorkingDirectory>
+    <AdditionalFiles>
+    </AdditionalFiles>
+    <RemoteDebuggerCommandArguments>1 nv12 448 252 20</RemoteDebuggerCommandArguments>
   </PropertyGroup>
 </Project>
