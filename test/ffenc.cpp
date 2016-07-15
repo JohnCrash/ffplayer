@@ -539,7 +539,6 @@ namespace ff
 	 * return 1 when encoding is finished, 0 otherwise
 	 * 出错返回-1
 	 */
-	static int64_t sT = 0;
 	static int write_video_frame(AVEncodeContext * pec, AVRaw *praw)
 	{
 		int ret;
@@ -583,9 +582,6 @@ namespace ff
 				AVPacket pkt = { 0 };
 				av_init_packet(&pkt);
 
-				int64_t b = av_gettime_relative();
-				int64_t loop = b - sT;
-				sT = b;
 				/* encode the image */
 				ret = avcodec_encode_video2(c, &pkt, frame, &got_packet);
 				if (ret < 0) {
@@ -594,7 +590,6 @@ namespace ff
 					av_log(NULL, AV_LOG_FATAL, "Error encoding video frame: %s\n", errmsg);
 					return -1;
 				}
-				int64_t e = av_gettime_relative();
 				
 				if (got_packet) {
 					ret = write_frame(pec,pec->_ctx, &c->time_base, st, &pkt);
@@ -602,8 +597,6 @@ namespace ff
 				else {
 					ret = 0;
 				}
-				int64_t w = av_gettime_relative();
-				av_log(NULL, AV_LOG_INFO, "encode_video2 %I64d , write_frame %I64d , loop %I64d \n", e - b, w - e, loop);
 			}
 
 			if (ret < 0) {
@@ -719,7 +712,6 @@ namespace ff
 		/*
 		 * 将音频数据放入采样器，如果有成功取得输出帧，就继续写入
 		 */
-		int64_t b = av_gettime_relative();
 		result = resample_audio_frame(&pec->_actx, praw, &frame);
 
 		while (result >= 0 && frame){
@@ -754,8 +746,7 @@ namespace ff
 			 */
 			result = flush_audio_frame(&pec->_actx, &frame);
 		}
-		int64_t e = av_gettime_relative();
-		av_log(NULL, AV_LOG_INFO, "Audio %I64d\n", e - b);
+
 		return (frame || got_packet) ? 0 : 1;
 	}
 

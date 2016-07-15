@@ -9,7 +9,18 @@ namespace ff
 #define AUDIO_CHANNELBIT 16
 #define MAX_NSYN 120
 #define MAX_ASYN 5
-
+	static const char * preset[] = {
+		"placebo",
+		"veryslow",
+		"slower",
+		"slow",
+		"medium",
+		"fast",
+		"faster",
+		"veryfast",
+		"superfast",
+		"ultrafast", //9
+	};
 	static void liveLoop(AVDecodeCtx * pdc, AVEncodeContext * pec, liveCB cb, liveState* pls)
 	{
 		int ret, nsyn,ncsyn,nsynacc;
@@ -175,8 +186,17 @@ namespace ff
 					log_cb(acl, level, format, arg);
 				}
 			);
+
 		av_dict_set(&opt, "strict", "-2", 0);
 		av_dict_set(&opt, "threads", "4", 0);
+
+		av_dict_set(&opt, "crf", "22", 0);
+
+		av_dict_set(&opt, "preset", preset[9], 0);
+
+		//av_dict_set(&opt, "tune", "zerolatency", 0);
+
+		//av_dict_set(&opt, "opencl", "true", 0);
 
 		while (1){
 			/*
