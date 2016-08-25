@@ -16,3 +16,6 @@ Classes/cur/
 ffmpegcmd/Debug/
 test/Debug/
 ffmpeg/Debug/
+*.mp4
+*.sdf
+*.suo

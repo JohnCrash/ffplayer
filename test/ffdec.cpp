@@ -3,10 +3,15 @@
 
 namespace ff
 {
-#define CAP_DEVICE_NAME "dshow"
-
+#ifdef WIN32
+	#define CAP_DEVICE_NAME "dshow"
+#elif __ANDROID__
+	#define CAP_DEVICE_NAME "android_camera"
+#elif __APPLE__
+	#define CAP_DEVICE_NAME "ios_camera"
+#endif
 	/*
-	* ´ò¿ªÒôÆµ±àÂëÆ÷
+	* ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	static int open_audio(AVDecodeCtx *pec, AVCodecID audio_codec_id, AVDictionary *opt_arg)
 	{
@@ -18,21 +23,8 @@ namespace ff
 
 		c = pec->_audio_st->codec;
 
-		codec = avcodec_find_decoder(audio_codec_id);
-		if (!codec)
-		{
-			av_log(NULL, AV_LOG_FATAL, "Could not find encoder '%s'\n", avcodec_get_name(audio_codec_id));
-			return -1;
-		}
-
-		/* open it */
-		av_dict_copy(&opt, opt_arg, 0);
-		ret = avcodec_open2(c, codec, &opt);
-		av_dict_free(&opt);
-		if (ret < 0) {
-			char errmsg[ERROR_BUFFER_SIZE];
-			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			av_log(NULL, AV_LOG_FATAL, "Could not open audio codec: %s\n", errmsg);
+		if(avcodec_decode_init(c,audio_codec_id,opt_arg)!=0){
+			av_log(NULL, AV_LOG_FATAL, "Could not init decoder '%s'\n", avcodec_get_name(audio_codec_id));
 			return -1;
 		}
 
@@ -49,23 +41,9 @@ namespace ff
 		if (!pec->_actx.frame)
 			return -1;
 
-		/* create resampler context */
-		pec->_actx.swr_ctx = swr_alloc();
-		if (!pec->_actx.swr_ctx) {
-			av_log(NULL, AV_LOG_FATAL, "Could not allocate resampler context.\n");
-			return -1;
-		}
-
-		/* set options */
-		av_opt_set_int(pec->_actx.swr_ctx, "in_channel_count", c->channels, 0);
-		av_opt_set_int(pec->_actx.swr_ctx, "in_sample_rate", c->sample_rate, 0);
-		av_opt_set_sample_fmt(pec->_actx.swr_ctx, "in_sample_fmt", AV_SAMPLE_FMT_S16, 0);
-		av_opt_set_int(pec->_actx.swr_ctx, "out_channel_count", c->channels, 0);
-		av_opt_set_int(pec->_actx.swr_ctx, "out_sample_rate", c->sample_rate, 0);
-		av_opt_set_sample_fmt(pec->_actx.swr_ctx, "out_sample_fmt", c->sample_fmt, 0);
-
-		/* initialize the resampling context */
-		if ((ret = swr_init(pec->_actx.swr_ctx)) < 0) {
+		pec->_actx.swr_ctx = av_swr_alloc(c->channels,c->sample_rate,AV_SAMPLE_FMT_S16,
+										  c->channels,c->sample_rate,c->sample_fmt);
+		if(!pec->_actx.swr_ctx){
 			av_log(NULL, AV_LOG_FATAL, "Failed to initialize the resampling context\n");
 			return -1;
 		}
@@ -73,7 +51,7 @@ namespace ff
 	}
 
 	/*
-	* ´ò¿ªÊÓÆµ±àÂëÆ÷
+	* ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	static int open_video(AVDecodeCtx *pec, AVCodecID video_codec_id, AVDictionary *opt_arg)
 	{
@@ -82,22 +60,8 @@ namespace ff
 		AVDictionary *opt = NULL;
 		AVCodec *codec;
 
-		codec = avcodec_find_decoder(video_codec_id);
-		if (!codec)
-		{
-			av_log(NULL, AV_LOG_FATAL, "Could not find encoder '%s'\n", avcodec_get_name(video_codec_id));
-			return -1;
-		}
-
-		av_dict_copy(&opt, opt_arg, 0);
-
-		/* open the codec */
-		ret = avcodec_open2(c, codec, &opt);
-		av_dict_free(&opt);
-		if (ret < 0) {
-			char errmsg[ERROR_BUFFER_SIZE];
-			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			av_log(NULL, AV_LOG_FATAL, "Could not open video codec: %s\n", errmsg);
+		if(avcodec_decode_init(c,video_codec_id,opt_arg)!=0){
+			av_log(NULL, AV_LOG_FATAL, "Could not init decoder '%s'\n", avcodec_get_name(video_codec_id));
 			return -1;
 		}
 
@@ -113,7 +77,7 @@ namespace ff
 	}
 
 	/*
-	* ´´½¨Ò»¸ö½âÂëÆ÷ÉÏÏÂÎÄ£¬¶ÔÊÓÆµÎÄ¼þ½øÐÐ½âÂë²Ù×÷
+	* ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½Ä¼ï¿½ï¿½ï¿½ï¿½Ð½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	AVDecodeCtx *ffCreateDecodeContext(
 		const char * filename, AVDictionary *opt_arg
@@ -137,9 +101,9 @@ namespace ff
 			}
 			//filename = "video=.." ,open dshow device
 			if (filename && strstr(filename, "video=") == filename){
-				file_iformat = av_find_input_format("dshow");
+				file_iformat = av_find_input_format(CAP_DEVICE_NAME);
 				if (!file_iformat){
-					av_log(NULL, AV_LOG_FATAL, "Unknown input format: 'dshow'\n");
+					av_log(NULL, AV_LOG_FATAL, "Unknown input format: '%s'\n",CAP_DEVICE_NAME);
 					break;
 				}
 			}
@@ -168,7 +132,7 @@ namespace ff
 				break;
 			}
 			/*
-			 * ²éÕÒÊÓÆµÁ÷ºÍÒôÆµÁ÷
+			 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½
 			 */
 			ret = av_find_best_stream(pdc->_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
 			if (ret >= 0)
@@ -186,7 +150,7 @@ namespace ff
 			}
 			if (pdc->has_video)
 			{
-				if (open_video(pdc, pdc->_video_st->codec->codec_id, opt_arg) < 0)
+				if (open_video(pdc, pdc->_video_st->codec->codec_id, NULL) < 0)
 				{
 					ffCloseDecodeContext(pdc);
 					return NULL;
@@ -195,7 +159,7 @@ namespace ff
 			}
 			if (pdc->has_audio)
 			{
-				if (open_audio(pdc, pdc->_audio_st->codec->codec_id, opt_arg) < 0)
+				if (open_audio(pdc, pdc->_audio_st->codec->codec_id, NULL) < 0)
 				{
 					ffCloseDecodeContext(pdc);
 					return NULL;
@@ -207,7 +171,7 @@ namespace ff
 		}
 
 		/*
-		 * Ê§°ÜÇåÀí
+		 * Ê§ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		 */
 		ffCloseDecodeContext(pdc);
 		return NULL;
@@ -242,7 +206,7 @@ namespace ff
 	}
 
 	/*
-	* È¡µÃÊÓÆµµÄÖ¡ÂÊ£¬¿í¶È£¬¸ß¶È
+	* È¡ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½Ö¡ï¿½Ê£ï¿½ï¿½ï¿½È£ï¿½ï¿½ß¶ï¿½
 	*/
 	AVRational ffGetFrameRate(AVDecodeCtx *pdc)
 	{
@@ -275,7 +239,7 @@ namespace ff
 	}
 
 	/*
-	* ´ÓÊÓÆµÎÄ¼þÖÐÈ¡µÃÒ»Ö¡£¬¿ÉÒÔÊÇÍ¼ÏñÖ¡£¬Ò²¿ÉÒÔÊÇÒ»¸öÒôÆµ°ü
+	* ï¿½ï¿½ï¿½ï¿½Æµï¿½Ä¼ï¿½ï¿½ï¿½È¡ï¿½ï¿½Ò»Ö¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¼ï¿½ï¿½Ö¡ï¿½ï¿½Ò²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½
 	*/
 	AVRaw * ffReadFrame(AVDecodeCtx *pdc)
 	{
@@ -344,7 +308,7 @@ namespace ff
 		while (true)
 		{
 			/*
-			 * ³õÊ¼½á¹¹
+			 * ï¿½ï¿½Ê¼ï¿½á¹¹
 			 */
 			memset(pdevices, 0, nmax*sizeof(AVDevice));
 
@@ -356,12 +320,12 @@ namespace ff
 			}
 			file_iformat = av_find_input_format(CAP_DEVICE_NAME);
 			if (!file_iformat){
-				av_log(NULL, AV_LOG_FATAL, "Unknown input format: 'dshow'\n");
+				av_log(NULL, AV_LOG_FATAL, "Unknown input format: %s \n",CAP_DEVICE_NAME);
 				break;
 			}
 
 			/*
-			 * Ê¹ÓÃÈÕÖ¾»Øµ÷º¯ÊýÀ´È¡µÃ·ý»ñÉè±¸µÄÐÅÏ¢
+			 * Ê¹ï¿½ï¿½ï¿½ï¿½Ö¾ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½Ã·ï¿½ï¿½ï¿½ï¿½è±¸ï¿½ï¿½ï¿½ï¿½Ï¢
 			 */
 			av_dict_set(&opt, "list_devices", "true", 0);
 
@@ -369,10 +333,12 @@ namespace ff
 			static auto cb = [&](void * acl, int level, const char *format, va_list arg)->void
 			{
 				if (level == AV_LOG_INFO && i < nmax){
-					if (strstr(format, "DirectShow video devices") == format){
+					if (strstr(format, "DirectShow video devices") == format ||
+						strstr(format, "Android camera devices") == format ){
 						type = AV_DEVICE_VIDEO;
 					}
-					else if (strstr(format, "DirectShow audio devices") == format){
+					else if (strstr(format, "DirectShow audio devices") == format ||
+							 strstr(format, "Android audio devices") == format ){
 						type = AV_DEVICE_AUDIO;
 					}
 					else if (strstr(format, " \"%s\"\n") == format){
@@ -509,7 +475,7 @@ namespace ff
 			av_dict_set(&opt, "video_size", buf, 0);
 			snprintf(buf, 32, "%d", fps);
 			av_dict_set(&opt, "framerate", buf, 0);
-			//·ý»ñ»º³åÇø´óÐ¡
+			//ï¿½ï¿½ï¿½ñ»º³ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡
 			//	snprintf(buf, 32, "%d", 8*1024*1024);
 			//	av_dict_set(&opt, "rtbufsize", buf, 0);
 		}
@@ -523,6 +489,7 @@ namespace ff
 		}
 		snprintf(buf, 32, "%d", fmt);
 		av_dict_set(&opt, "pixel_format", buf, 0);
+
 		return ffCreateDecodeContext(filename, opt);
 	}
 }

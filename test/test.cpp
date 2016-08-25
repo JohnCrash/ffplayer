@@ -598,7 +598,8 @@ int _tmain(int argc, _TCHAR* argv[])
 				fmt_name[i] = (char)p[i];
 		}
 	}else{
-		strcpy(fmt_name, "yuv420p");
+		//strcpy(fmt_name, "yuv420p");
+		strcpy(fmt_name, "bgr24");
 	}
 	if(argc>5 && argv[3] && argv[4] && argv[5]){
 		w = _wtoi(argv[3]);

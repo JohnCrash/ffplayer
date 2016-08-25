@@ -26,13 +26,13 @@ namespace ff
 		int ret, nsyn,ncsyn,nsynacc;
 		AVRational audio_time_base, video_time_base;
 		AVRaw * praw = NULL;
-		int64_t ctimer; //×ÔÈ»Ê±¼ä
-		int64_t nsamples = 0; //ÒôÆµ²ÉÑùÊýÁ¿
-		int64_t nframe = 0; //ÊÓÆµÖ¡ÊýÁ¿
-		int64_t begin_pts = 0; //µÚÒ»Ö¡µÄÉè±¸pts
+		int64_t ctimer; //ï¿½ï¿½È»Ê±ï¿½ï¿½
+		int64_t nsamples = 0; //ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		int64_t nframe = 0; //ï¿½ï¿½ÆµÖ¡ï¿½ï¿½ï¿½ï¿½
+		int64_t begin_pts = 0; //ï¿½ï¿½Ò»Ö¡ï¿½ï¿½ï¿½è±¸pts
 		int64_t nsyndt = 0;
 		int64_t nsynbt = 0;
-		int64_t stimer = av_gettime_relative(); //×ÔÈ»Ê±¼äÆðÊ¼µã
+		int64_t stimer = av_gettime_relative(); //ï¿½ï¿½È»Ê±ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½
 		nsyn = 0;
 		ncsyn = 0;
 		nsynacc = 0;
@@ -43,10 +43,10 @@ namespace ff
 		while (1){
 			ctimer = av_gettime_relative();
 			praw = ffReadFrame(pdc);
-			retain_raw(praw);
 
 			if (!praw)break;
 
+			retain_raw(praw);
 			if (!pdc->has_audio && begin_pts == 0){
 				begin_pts = praw->pts;
 				stimer = av_gettime_relative();
@@ -54,7 +54,7 @@ namespace ff
 
 			if (praw->type == RAW_IMAGE && pdc->has_video){
 				if (!pdc->has_audio){
-					//Èç¹ûÃ»ÓÐÒôÆµÉè±¸£¬ÊÓÆµÖ¡ºÍ×ÔÈ»Ê±¼ä±£³ÖÍ¬²½
+					//ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½Æµï¿½è±¸ï¿½ï¿½ï¿½ï¿½ÆµÖ¡ï¿½ï¿½ï¿½ï¿½È»Ê±ï¿½ä±£ï¿½ï¿½Í¬ï¿½ï¿½
 					int64_t bf = av_rescale_q(ctimer - stimer, AVRational{1,AV_TIME_BASE},video_time_base);
 					ncsyn = bf - nframe;
 					if (abs(ncsyn) > MAX_NSYN){
@@ -64,7 +64,7 @@ namespace ff
 				}
 				else if ( nsyndt>0 && nsynbt!=0 ){
 					/*
-					 * Æ½»¬²¹³¥,ÆðÊ¼Ê±¼änsynbt,ÔÚnsyndtÊ±¼äÀï²¹³¥nsynÖ¡Êý¾Ý
+					 * Æ½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½,ï¿½ï¿½Ê¼Ê±ï¿½ï¿½nsynbt,ï¿½ï¿½nsyndtÊ±ï¿½ï¿½ï¿½ï²¹ï¿½ï¿½nsynÖ¡ï¿½ï¿½ï¿½ï¿½
 					 */
 					int nsynp = (int)(nsyn*(ctimer - nsynbt) / nsyndt);
 					
@@ -90,7 +90,7 @@ namespace ff
 					break;
 				}
 				else{
-					//¶ªÆú¶àÓàµÄÖ¡
+					//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¡
 		//			av_log(NULL, AV_LOG_INFO, "discard video frame\n");
 				}
 #ifdef _DEBUG
@@ -107,7 +107,7 @@ namespace ff
 				if( ret=ffAddFrame(pec, praw) < 0 )
 					break;
 				/*
-				 * ¼ÆËãÊÓÆµÖ¡²¹³¥
+				 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÆµÖ¡ï¿½ï¿½ï¿½ï¿½
 				 */
 				int64_t at = av_rescale_q(nsamples, audio_time_base, AVRational{ 1, AV_TIME_BASE });
 				int64_t vt = av_rescale_q(nframe, video_time_base, AVRational{ 1, AV_TIME_BASE });
@@ -120,7 +120,7 @@ namespace ff
 					break;
 				}
 				/*
-				 * ×ÔÈ»Ê±¼ä¼ì²é
+				 * ï¿½ï¿½È»Ê±ï¿½ï¿½ï¿½ï¿½
 				 */
 				double dsyn = (double)abs(ctimer - stimer - at)/(double)AV_TIME_BASE;
 				if (dsyn > MAX_ASYN){
@@ -136,7 +136,7 @@ namespace ff
 				nsynacc = 0;
 			}
 			/*
-			 * »Øµ÷
+			 * ï¿½Øµï¿½
 			 */
 			if (nframe % 8 == 0){
 				if (cb && pls){
@@ -200,27 +200,28 @@ namespace ff
 
 		while (1){
 			/*
-			 * Ê×ÏÈ³õÊ¼»¯±àÂëÆ÷
+			 * ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 			 */
-			vid = camera_name ? AV_CODEC_ID_H264 : AV_CODEC_ID_NONE;
-			aid = phone_name ? AV_CODEC_ID_AAC : AV_CODEC_ID_NONE;
-			pec = ffCreateEncodeContext(rtmp_publisher, "flv", w, h, afps, vbitRate, vid,
-				w, h, pixFmt,
-				rate, abitRate, aid,
-				AUDIO_CHANNEL, rate, sampleFmt,
-				opt);
-			if (!pec){
+			pdc = ffCreateCapDeviceDecodeContext(camera_name, w, h, fps, pixFmt, phone_name, AUDIO_CHANNEL, AUDIO_CHANNELBIT, rate, opt);
+			if (!pdc || !pdc->_video_st || !pdc->_video_st->codec){
 				if (cb){
 					state.state = LIVE_ERROR;
 					cb(&state);
 				}
 				break;
 			}
+			AVCodecContext *ctx = pdc->_video_st->codec;
 			/*
-			 * ³õÊ¼»¯½âÂëÆ÷
+			 * ï¿½ï¿½ï¿½È³ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 			 */
-			pdc = ffCreateCapDeviceDecodeContext(camera_name, w, h, fps, pixFmt, phone_name, AUDIO_CHANNEL, AUDIO_CHANNELBIT, rate, opt);
-			if (!pdc){
+			vid = camera_name ? AV_CODEC_ID_H264 : AV_CODEC_ID_NONE;
+			aid = phone_name ? AV_CODEC_ID_AAC : AV_CODEC_ID_NONE;
+			pec = ffCreateEncodeContext(rtmp_publisher, "flv", w, h, afps, vbitRate, vid,
+										ctx->width, ctx->height, ctx->pix_fmt,
+										rate, abitRate, aid,
+										AUDIO_CHANNEL, rate, sampleFmt,
+										opt);
+			if (!pec){
 				if (cb){
 					state.state = LIVE_ERROR;
 					cb(&state);

@@ -3,7 +3,7 @@
 namespace ff
 {
 	/*
-	 * ÏòAVFormatContext¼ÓÈëÐÂµÄÁ÷
+	 * ï¿½ï¿½AVFormatContextï¿½ï¿½ï¿½ï¿½ï¿½Âµï¿½ï¿½ï¿½
 	 */
 	static int add_stream(AVEncodeContext *pec, AVCodecID codec_id,
 		int w, int h, AVRational stream_frame_rate, int stream_bit_rate)
@@ -63,7 +63,7 @@ namespace ff
 
 			c->codec_id = codec_id;
 			c->bit_rate = stream_bit_rate;
-			/* ·Ö±æÂÊ±ØÐëÊÇ2µÄ±¶Êý£¬ÕâÀïÐèÒª×÷¼ì²é */
+			/* ï¿½Ö±ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½2ï¿½Ä±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½ï¿½ */
 			c->width = w;
 			c->height = h;
 			//st->time_base.den = stream_frame_rate.num;
@@ -101,7 +101,7 @@ namespace ff
 	}
 
 	/*
-	 * ¹Ø±ÕÁ÷
+	 * ï¿½Ø±ï¿½ï¿½ï¿½
 	 */
 	static void close_stream(AVStream *st)
 	{
@@ -137,10 +137,10 @@ namespace ff
 	}
 
 	/*
-	 * ´ò¿ªÊÓÆµ±àÂëÆ÷
+	 * ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	 */
 	static int open_video(AVEncodeContext *pec, AVCodecID video_codec_id,
-		int in_w,int in_h,AVPixelFormat in_fmt, //FIXME: Ìí¼Ó²»Í¬³ß´çºÍ¸ñÊ½½øÐÐ×ª»»µÄ´úÂë
+		int in_w,int in_h,AVPixelFormat in_fmt, //FIXME: ï¿½ï¿½Ó²ï¿½Í¬ï¿½ß´ï¿½Í¸ï¿½Ê½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½Ä´ï¿½ï¿½ï¿½
 		AVDictionary *opt_arg)
 	{
 		int ret;
@@ -149,22 +149,8 @@ namespace ff
 		AVCodec *codec;
 		int w, h, fmt;
 
-		codec = avcodec_find_encoder(video_codec_id);
-		if (!codec)
-		{
-			av_log(NULL, AV_LOG_FATAL, "Could not find encoder '%s'\n", avcodec_get_name(video_codec_id));
-			return -1;
-		}
-
-		av_dict_copy(&opt, opt_arg, 0);
-
-		/* open the codec */
-		ret = avcodec_open2(c, codec, &opt);
-		av_dict_free(&opt);
-		if (ret < 0) {
-			char errmsg[ERROR_BUFFER_SIZE];
-			av_strerror(ret, errmsg, ERROR_BUFFER_SIZE);
-			av_log(NULL, AV_LOG_FATAL, "Could not open video codec: %s\n", errmsg);
+		if(avcodec_encode_init(c,video_codec_id,opt_arg)!=0){
+			av_log(NULL, AV_LOG_FATAL, "Could not init encoder '%s'\n", avcodec_get_name(video_codec_id));
 			return -1;
 		}
 
@@ -177,9 +163,8 @@ namespace ff
 		}
 
 		if (c->width != in_w || c->height != in_h || in_fmt != c->pix_fmt){
-			pec->_vctx.sws_ctx = sws_getContext(in_w, in_h, in_fmt, 
-				c->width, c->height, c->pix_fmt, 
-				SCALE_FLAGS, NULL, NULL, NULL);
+			pec->_vctx.sws_ctx = av_sws_alloc(in_w, in_h, in_fmt,
+				c->width, c->height, c->pix_fmt);
 			if (!pec->_vctx.sws_ctx){
 				av_log(NULL, AV_LOG_FATAL, "Could not initialize the conversion context,in_w=%d,in_h=%d,in_fmt=%d\n", in_w, in_h, in_fmt);
 				return -1;
@@ -189,7 +174,7 @@ namespace ff
 	}
 
 	/*
-	 * ·ÖÅäÒôÆµÖ¡
+	 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÆµÖ¡
 	 */
 	AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
 		uint64_t channel_layout,
@@ -220,7 +205,7 @@ namespace ff
 	}
 
 	/*
-	 * ´ò¿ªÒôÆµ±àÂëÆ÷
+	 * ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	 */
 	static int open_audio(AVEncodeContext *pec, AVCodecID audio_codec_id, 
 		int in_ch,int in_rate,AVSampleFormat in_fmt,
@@ -272,16 +257,9 @@ namespace ff
 			return -1;
 		}
 
-		/* set options */
-		av_opt_set_int(pec->_actx.swr_ctx, "in_channel_count", in_ch, 0);
-		av_opt_set_int(pec->_actx.swr_ctx, "in_sample_rate", in_rate, 0);
-		av_opt_set_sample_fmt(pec->_actx.swr_ctx, "in_sample_fmt", in_fmt, 0);
-		av_opt_set_int(pec->_actx.swr_ctx, "out_channel_count", c->channels, 0);
-		av_opt_set_int(pec->_actx.swr_ctx, "out_sample_rate", c->sample_rate, 0);
-		av_opt_set_sample_fmt(pec->_actx.swr_ctx, "out_sample_fmt", c->sample_fmt, 0);
-
-		/* initialize the resampling context */
-		if ((ret = swr_init(pec->_actx.swr_ctx)) < 0) {
+		pec->_actx.swr_ctx = av_swr_alloc(in_ch,in_rate,in_fmt,
+										  c->channels,c->sample_rate,c->sample_fmt);
+		if(!pec->_actx.swr_ctx){
 			av_log(NULL, AV_LOG_FATAL, "Failed to initialize the resampling context\n");
 			return -1;
 		}
@@ -333,7 +311,7 @@ namespace ff
 			return praw->size / 1024;
 		}
 		/*
-		* Î´ÖªµÄ¸ñÊ½£¬²»¼ÓÈëµ½Í³¼ÆÖÐ
+		* Î´Öªï¿½Ä¸ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ëµ½Í³ï¿½ï¿½ï¿½ï¿½
 		*/
 		return 0;
 	}
@@ -395,15 +373,15 @@ namespace ff
 		{
 #if 0
 			/*
-			 * ÒôÆµºÍÊÓÆµµÄÊý¾ÝÒª½»ÌæÐ´Èëµ½Á÷ÎÄ¼þ
+			 * ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½Ð´ï¿½ëµ½ï¿½ï¿½ï¿½Ä¼ï¿½
 			 */
 			if (av_compare_ts(pec->_actx.next_pts, pec->_audio_st->codec->time_base,
 				pec->_vctx.next_pts, pec->_video_st->codec->time_base) >= 0)
 			{
 				/*
-				 * ÕâÀïÈ¡Ò»¸öÊÓÆµÖ¡£¬Èç¹ûÃ»ÓÐÊÓÆµÖ¡¾ÍµÈÔÚÕâÀï¡£Ö±µ½ÓÐÒ»¸öÊÓÆµÖ¡µ½À´
-				 * »òÕßÍ¨¹ýisflush»ñÖªÒÑ¾­Ã»ÓÐ¸ú¶àÊý¾ÝÁË¡£Èç¹ûÔÚwhileÑ­»·½áÊø»¹ÊÇÃ»ÓÐÊý¾Ý
-				 * list_pop_raw½«·µ»ØÒ»¸öNULLÖ¸Õë£¬½ø¶øÊÇÑ¹ËõÏß³ÌÖÕÖ¹¡£
+				 * ï¿½ï¿½ï¿½ï¿½È¡Ò»ï¿½ï¿½ï¿½ï¿½ÆµÖ¡ï¿½ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ÆµÖ¡ï¿½Íµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¡£Ö±ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ÆµÖ¡ï¿½ï¿½ï¿½ï¿½
+				 * ï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½isflushï¿½ï¿½Öªï¿½Ñ¾ï¿½Ã»ï¿½Ð¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½whileÑ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+				 * list_pop_rawï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½NULLÖ¸ï¿½ë£¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ¹ï¿½ï¿½ï¿½ß³ï¿½ï¿½ï¿½Ö¹ï¿½ï¿½
 				 */
 				pec->_encode_waiting = 1;
 				while (!pec->_video_head && !pec->_isflush)
@@ -421,7 +399,7 @@ namespace ff
 			}
 #endif
 			pec->_encode_waiting = 1;
-			//Èç¹ûpec->_video_head == NULL && pec->_video_head == NULL
+			//ï¿½ï¿½ï¿½pec->_video_head == NULL && pec->_video_head == NULL
 			while (!(pec->_video_head || pec->_audio_head) && !pec->_isflush)
 				pec->_cond->wait(lock);
 			pec->_encode_waiting = 0;
@@ -471,13 +449,13 @@ namespace ff
 		AVFrame * frame = ctx->frame;
 
 		/*
-		 * ±àÂëÆ÷ÒªÇóµÄ¸ñÊ½ºÍÊäÈë¸ñÊ½ÏàÍ¬£¬ÕâÀï²»ÐèÒª½øÐÐ¸´ÔÓ×ª»»¡£
+		 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½Ä¸ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê½ï¿½ï¿½Í¬ï¿½ï¿½ï¿½ï¿½ï¿½ï²»ï¿½ï¿½Òªï¿½ï¿½ï¿½Ð¸ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½
 		 */
 		if (!ctx->sws_ctx)
 		{
 			/*
-			 * Èç¹û¸ñÊ½ÏàÍ¬¿ÉÒÔ½øÈ¥¼òµ¥µÄ¿½±´
-			 * FIXME: Èç¹û¼òµ¥µÄÊ¹ÓÃprawÖÐµÄÖ¸Õë´«µÝ¸øframe£¬Ñ¹ËõÍê³ÉÔÚ»Ö¸´¿ÉÒÔ½ÚÊ¡copy²Ù×÷
+			 * ï¿½ï¿½ï¿½ï¿½ï¿½Ê½ï¿½ï¿½Í¬ï¿½ï¿½ï¿½Ô½ï¿½È¥ï¿½òµ¥µÄ¿ï¿½ï¿½ï¿½
+			 * FIXME: ï¿½ï¿½ï¿½ï¿½òµ¥µï¿½Ê¹ï¿½ï¿½prawï¿½Ðµï¿½Ö¸ï¿½ë´«ï¿½Ý¸ï¿½frameï¿½ï¿½Ñ¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú»Ö¸ï¿½ï¿½ï¿½ï¿½Ô½ï¿½Ê¡copyï¿½ï¿½ï¿½ï¿½
 			 */
 			/* when we pass a frame to the encoder, it may keep a reference to it
 			* internally;
@@ -492,7 +470,7 @@ namespace ff
 				return NULL;
 			}
 			/*
-			 * ÕâÀï×öÊý¾Ý¸´ÖÆ
+			 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý¸ï¿½ï¿½ï¿½
 			 */
 			av_image_copy(frame->data, frame->linesize, (const uint8_t **)praw->data, praw->linesize, c->pix_fmt, praw->width, praw->height);
 
@@ -537,7 +515,7 @@ namespace ff
 	/*
 	 * encode one video frame and send it to the muxer
 	 * return 1 when encoding is finished, 0 otherwise
-	 * ³ö´í·µ»Ø-1
+	 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½-1
 	 */
 	static int write_video_frame(AVEncodeContext * pec, AVRaw *praw)
 	{
@@ -656,7 +634,7 @@ namespace ff
 
 		*pframe = NULL;
 		/*
-		 * ²ÉÑùÆ÷ÖÐÃ»ÓÐ×ã¹»µÄÊý¾ÝÌîÂúÒ»Ö¡
+		 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ã¹»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»Ö¡
 		 */
 		int nd = swr_get_delay(ctx->swr_ctx, c->sample_rate);
 		if (nd < frame->nb_samples)
@@ -689,7 +667,7 @@ namespace ff
 	/*
 	* encode one audio frame and send it to the muxer
 	* return 1 when encoding is finished, 0 otherwise
-	* ³ö´í·µ»Ø-1
+	* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½-1
 	*/
 	static int write_audio_frame(AVEncodeContext * pec, AVRaw *praw)
 	{
@@ -710,7 +688,7 @@ namespace ff
 
 		frame = NULL;
 		/*
-		 * ½«ÒôÆµÊý¾Ý·ÅÈë²ÉÑùÆ÷£¬Èç¹ûÓÐ³É¹¦È¡µÃÊä³öÖ¡£¬¾Í¼ÌÐøÐ´Èë
+		 * ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½Ý·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð³É¹ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½Ö¡ï¿½ï¿½ï¿½Í¼ï¿½ï¿½ï¿½Ð´ï¿½ï¿½
 		 */
 		result = resample_audio_frame(&pec->_actx, praw, &frame);
 
@@ -742,7 +720,7 @@ namespace ff
 			}
 
 			/*
-			 * ¼ÌÐøÈç¹û²ÉÑùÆ÷ÖÐ»¹ÓÐ×ã¹»µÄÊý¾Ý£¬¾Í¼ÌÐø¶ÁÈ¡ÏÂÒ»¸öÖ¡
+			 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð»ï¿½ï¿½ï¿½ï¿½ã¹»ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½Ò»ï¿½ï¿½Ö¡
 			 */
 			result = flush_audio_frame(&pec->_actx, &frame);
 		}
@@ -840,8 +818,8 @@ namespace ff
 			}
 			else {
 				/*
-				* Èç¹û·µ»ØNULL±íÊ¾ÒÑ¾­Ã»ÓÐÊý¾ÝÁË¡£
-				* Ð´ÈëÑÓÊ±Ö¡
+				* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½NULLï¿½ï¿½Ê¾ï¿½Ñ¾ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¡ï¿½
+				* Ð´ï¿½ï¿½ï¿½ï¿½Ê±Ö¡
 				*/
 				write_delay_video_frame(pec);
 				break;
@@ -873,8 +851,8 @@ namespace ff
 			}
 			else {
 				/*
-				* Èç¹û·µ»ØNULL±íÊ¾ÒÑ¾­Ã»ÓÐÊý¾ÝÁË¡£
-				* Ð´ÈëÑÓÊ±Ö¡
+				* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½NULLï¿½ï¿½Ê¾ï¿½Ñ¾ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¡ï¿½
+				* Ð´ï¿½ï¿½ï¿½ï¿½Ê±Ö¡
 				*/
 				write_delay_audio_frame(pec);
 				break;
@@ -884,7 +862,7 @@ namespace ff
 		return 0;
 	}
 	/*
-	 * ±àÂëÐ´ÈëÏß³Ì
+	 * ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ï¿½ß³ï¿½
 	 */
 #if 0
 	int encode_thread_proc(AVEncodeContext * pec)
@@ -896,7 +874,7 @@ namespace ff
 		{
 			praw = ffPopFrame(pec);
 			/*
-			 * Ñ¹ËõÔ­ÉúÊý¾Ý²¢Ð´Èëµ½ÎÄ¼þÖÐ
+			 * Ñ¹ï¿½ï¿½Ô­ï¿½ï¿½ï¿½ï¿½ï¿½Ý²ï¿½Ð´ï¿½ëµ½ï¿½Ä¼ï¿½ï¿½ï¿½
 			 */
 			if (praw)
 			{
@@ -932,8 +910,8 @@ namespace ff
 			else
 			{
 				/*
-				 * Èç¹û·µ»ØNULL±íÊ¾ÒÑ¾­Ã»ÓÐÊý¾ÝÁË¡£
-				 * Ð´ÈëÑÓÊ±Ö¡
+				 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½NULLï¿½ï¿½Ê¾ï¿½Ñ¾ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¡ï¿½
+				 * Ð´ï¿½ï¿½ï¿½ï¿½Ê±Ö¡
 				 */
 				write_delay_frame(pec);
 				break;
@@ -951,7 +929,7 @@ namespace ff
 	}
 
 	/**
-	 * ´´½¨±àÂëÉÏÏÂÎÄ
+	 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	 */
 	AVEncodeContext* ffCreateEncodeContext(const char* filename, const char *fmt,
 		int w, int h, AVRational frameRate, int videoBitRate, AVCodecID video_codec_id,
@@ -976,7 +954,7 @@ namespace ff
 		pec->_height = h;
 		pec->_fileName = strdup(filename);
 		/*
-		 * ´´½¨Êä³öÉÏÏÂÎÄ
+		 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		 */
 		avformat_alloc_output_context2(&ofmt_ctx, NULL, fmt, filename);
 		if (!ofmt_ctx){
@@ -986,7 +964,7 @@ namespace ff
 		}
 		pec->_ctx = ofmt_ctx;
 		/*
-		 * ¼ÓÈëÊÓÆµÁ÷ºÍÒôÆµÁ÷
+		 * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½
 		 */
 		if (AV_CODEC_ID_NONE != video_codec_id)
 		{
@@ -1012,7 +990,7 @@ namespace ff
 			pec->has_audio = 1;
 		}
 		/*
-		 * ´ò¿ªÊÓÆµ±àÂëÆ÷ºÍÒôÆµ±àÂëÆ÷
+		 * ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		 */
 		if (pec->has_video)
 		{
@@ -1037,7 +1015,7 @@ namespace ff
 			pec->encode_audio = 1;
 		}
 		/*
-		 * Èç¹ûÓÐ±ØÒª´ò¿ªÒ»¸öÎÄ¼þÊä³öÁ÷
+		 * ï¿½ï¿½ï¿½ï¿½Ð±ï¿½Òªï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		 */
 		ofmt = ofmt_ctx->oformat;
 		if (!(ofmt->flags & AVFMT_NOFILE)) {
@@ -1049,7 +1027,7 @@ namespace ff
 			}
 		}
 		/*
-		 * Ð´ÈëÃ½ÌåÍ·ÎÄ¼þ
+		 * Ð´ï¿½ï¿½Ã½ï¿½ï¿½Í·ï¿½Ä¼ï¿½
 		 */
 		ret = avformat_write_header(ofmt_ctx, NULL);
 		if (ret < 0) {
@@ -1062,7 +1040,7 @@ namespace ff
 		av_dump_format(ofmt_ctx, 0, filename, 1);
 
 		/*
-		 * Æô¶¯Ñ¹ËõÑ¹ËõÏß³Ì
+		 * ï¿½ï¿½ï¿½ï¿½Ñ¹ï¿½ï¿½Ñ¹ï¿½ï¿½ï¿½ß³ï¿½
 		 */
 		pec->write_mutex = new mutex_t();
 
@@ -1097,14 +1075,14 @@ namespace ff
 	}
 
 	/**
-	* ¹Ø±Õ±àÂëÉÏÏÂÎÄ
+	* ï¿½Ø±Õ±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	void ffCloseEncodeContext(AVEncodeContext *pec)
 	{
 		if (pec)
 		{
 			/*
-			 * Í£Ö¹Ñ¹ËõÏß³Ì,Ñ¹ËõÔÚÃ»ÓÐÊý¾Ý¿É´¦Àí²¢ÇÒ_encode_thread=1ÊÇÍË³ö
+			 * Í£Ö¹Ñ¹ï¿½ï¿½ï¿½ß³ï¿½,Ñ¹ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½Ý¿É´ï¿½ï¿½ï¿½ï¿½ï¿½_encode_thread=1ï¿½ï¿½ï¿½Ë³ï¿½
 			 */
 			ffStopThreadAVCtx(&pec->_actx);
 			ffStopThreadAVCtx(&pec->_vctx);
@@ -1120,7 +1098,7 @@ namespace ff
 					*/
 					av_write_trailer(pec->_ctx);
 					/*
-					 * Èç¹ûÓÐ±ØÒª¹Ø±ÕÎÄ¼þÁ÷
+					 * ï¿½ï¿½ï¿½ï¿½Ð±ï¿½Òªï¿½Ø±ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½
 					 */
 					if (pec->_ctx->oformat && !(pec->_ctx->oformat->flags & AVFMT_NOFILE))
 					{
@@ -1128,7 +1106,7 @@ namespace ff
 					}
 				}
 				/*
-				* ¹Ø±Õ±àÂëÆ÷
+				* ï¿½Ø±Õ±ï¿½ï¿½ï¿½ï¿½ï¿½
 				*/
 				if (pec->_video_st)
 					close_stream(pec->_video_st);

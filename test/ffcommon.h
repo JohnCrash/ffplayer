@@ -6,9 +6,13 @@
 #include <thread>
 
 #define inline __inline
-#include "ffconfig.h"
+#include "config.h"
+
+#ifdef _WIN32
 #define HAVE_STRUCT_POLLFD 1
 #define snprintf _snprintf
+#endif
+
 extern "C"
 {
 #include "libavformat/avformat.h"
@@ -41,6 +45,14 @@ extern "C"
 # include "libavfilter/buffersink.h"
 
 #include "libavutil/timestamp.h"
+
+struct SwrContext * av_swr_alloc(int in_ch,int in_rate,enum AVSampleFormat in_fmt,
+						  int out_ch,int out_rate,enum AVSampleFormat out_fmt);
+struct SwsContext * av_sws_alloc(int in_w,int in_h,enum AVPixelFormat in_fmt,
+						  int out_w,int out_h,enum AVPixelFormat out_fmt);
+int avcodec_decode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary *opt_arg);
+int avcodec_encode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary *opt_arg);
+void av_ff_init();
 }
 
 namespace ff
@@ -79,10 +91,8 @@ namespace ff
 		int encode_waiting;
 	};
 
-
-
 	/*
-	* ³õÊ¼»¯ff¿â,×¢²áÉè±¸£¬³õÊ¼ÍøÂç¡£
+	* ï¿½ï¿½Ê¼ï¿½ï¿½ffï¿½ï¿½,×¢ï¿½ï¿½ï¿½è±¸ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ç¡£
 	*/
 	void ffInit();
 
