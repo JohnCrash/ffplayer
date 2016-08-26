@@ -996,7 +996,7 @@ namespace ff
 		{
 			if (open_video(pec, video_codec_id, 
 				in_w,in_h,in_fmt,
-				opt_arg) < 0)
+				NULL) < 0)
 			{
 				ffCloseEncodeContext(pec);
 				return NULL;

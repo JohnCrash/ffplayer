@@ -112,6 +112,9 @@
     <ClCompile Include="..\Classes\SDLWindow.cpp" />
     <ClCompile Include="cap_vfw.cpp" />
     <ClCompile Include="dec.cpp" />
+    <ClCompile Include="ffcommon.c">
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">inline=__inline;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="ffdec.cpp" />
     <ClCompile Include="ffenc.cpp" />
     <ClCompile Include="ffraw.cpp" />

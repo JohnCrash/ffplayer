@@ -21,6 +21,19 @@ namespace ff
 		"superfast",
 		"ultrafast", //9
 	};
+	
+	static const enum AVPixelFormat libx264_fmts[] = {
+		AV_PIX_FMT_YUV420P,
+		AV_PIX_FMT_YUVJ420P,
+		AV_PIX_FMT_YUV422P,
+		AV_PIX_FMT_YUVJ422P,
+		AV_PIX_FMT_YUV444P,
+		AV_PIX_FMT_YUVJ444P,
+		AV_PIX_FMT_NV12,
+		AV_PIX_FMT_NV16,
+		AV_PIX_FMT_NV21
+	};
+
 	static void liveLoop(AVDecodeCtx * pdc, AVEncodeContext * pec, liveCB cb, liveState* pls)
 	{
 		int ret, nsyn,ncsyn,nsynacc;

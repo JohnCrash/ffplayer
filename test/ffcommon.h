@@ -6,7 +6,7 @@
 #include <thread>
 
 #define inline __inline
-#include "config.h"
+#include "ffconfig.h"
 
 #ifdef _WIN32
 #define HAVE_STRUCT_POLLFD 1
