@@ -2,17 +2,18 @@
 
 if test "$1" = "config" || test "$1" = ""; then
 	export PKG_CONFIG_PATH=../x264/build/win32
-	"./configure --toolchain=msvc --disable-static --enable-shared --enable-protocol=http \
+	`./configure --toolchain=msvc --disable-static --enable-shared --enable-protocol=http \
 	--enable-protocol=rtmp \
 	--enable-gpl \
-	--enable-libx264"
+	--enable-libx264`
 fi
 
 if test "$1" = "make" || test "$1" = ""; then
+	export PKG_CONFIG_PATH=../x264/build/win32
 	make
 fi
 
-if test "$1" = "install" || test "$1" = ""; then
+if test "$1" = "install"; then
 	mkdir build  > /dev/null
 	mkdir build/include > /dev/null
 	mkdir build/win32 > /dev/null
@@ -50,9 +51,10 @@ if test "$1" = "install" || test "$1" = ""; then
 	cp config.h ./build/win32 -f
 	rm ./build/win32/ffconfig.h > /dev/null
 	mv ./build/win32/config.h ./build/win32/ffconfig.h
+	cp config.h ./build/win32 -f
 	
 	rm temp.tar -f > /dev/null
-	find libavformat libavcodec libavdevice  libavutil libswresample libswscale libavfilter libpostproc -iname "*.h" -exec tar -rvf temp.tar {} \;
+	find compat libavformat libavcodec libavdevice  libavutil libswresample libswscale libavfilter libpostproc -iname "*.h" -exec tar -rvf temp.tar {} \;
 	tar xvf temp.tar -C build/include > /dev/null
 	rm temp.tar -f > /dev/null
 	
