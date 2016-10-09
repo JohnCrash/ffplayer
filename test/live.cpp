@@ -130,6 +130,10 @@ namespace ff
 				nsyn += nsynacc;
 				if (abs(nsyn) > MAX_NSYN || abs(nsynacc) > MAX_NSYN ){
 					av_log(NULL, AV_LOG_ERROR, "video frame synchronize error, nsyn > MAX_NSYN , nsyn = %d nsynacc = %d\n", nsyn, nsynacc);
+					if (cb && pls){
+						pls->state = LIVE_ERROR;
+						cb(pls);
+					}
 					break;
 				}
 				/*
@@ -138,6 +142,10 @@ namespace ff
 				double dsyn = (double)abs(ctimer - stimer - at)/(double)AV_TIME_BASE;
 				if (dsyn > MAX_ASYN){
 					av_log(NULL, AV_LOG_ERROR, "audio frame synchronize error, dsyn > MAX_ASYN , nsyn = %.4f\n", dsyn);
+					if (cb && pls){
+						pls->state = LIVE_ERROR;
+						cb(pls);
+					}
 					break;
 				}
 #ifdef _DEBUG
@@ -167,16 +175,17 @@ namespace ff
 		const char * rtmp_publisher,
 		const char * camera_name, int w, int h, int fps, const char * pix_fmt_name, int vbitRate,
 		const char * phone_name, int rate, const char * sample_fmt_name, int abitRate,
+		int ow, int oh, int ofps,
 		liveCB cb)
 	{
 		AVDecodeCtx * pdc = NULL;
 		AVEncodeContext * pec = NULL;
 		AVDictionary *opt = NULL;
-		AVRational afps = AVRational{ fps, 1 };
 		AVCodecID vid, aid;
 		AVPixelFormat pixFmt = av_get_pix_fmt(pix_fmt_name);
 		AVSampleFormat sampleFmt = av_get_sample_fmt(sample_fmt_name);
 		liveState state;
+		const char *outFmt;
 
 		memset(&state, 0, sizeof(state));
 		static auto log_cb = [&](void * acl, int level, const char *format, va_list arg)->void
@@ -224,16 +233,26 @@ namespace ff
 				break;
 			}
 			AVCodecContext *ctx = pdc->_video_st->codec;
+
 			/*
-			 * ���ȳ�ʼ��������
+			 * 直播,FIXME:忽略直播的独立帧率，目前和输入帧率相同
 			 */
 			vid = camera_name ? AV_CODEC_ID_H264 : AV_CODEC_ID_NONE;
 			aid = phone_name ? AV_CODEC_ID_AAC : AV_CODEC_ID_NONE;
-			pec = ffCreateEncodeContext(rtmp_publisher, "flv", w, h, afps, vbitRate, vid,
-										ctx->width, ctx->height, ctx->pix_fmt,
-										rate, abitRate, aid,
-										AUDIO_CHANNEL, rate, sampleFmt,
-										opt);
+			if ((rtmp_publisher[0] == 'R' || rtmp_publisher[0] == 'r') &&
+				(rtmp_publisher[1] == 'T' || rtmp_publisher[1] == 't') &&
+				(rtmp_publisher[2] == 'M' || rtmp_publisher[2] == 'm') &&
+				(rtmp_publisher[3] == 'P' || rtmp_publisher[3] == 'p')){
+				outFmt = "flv";
+			}
+			else{
+				outFmt = "mp4";
+			}
+			pec = ffCreateEncodeContext(rtmp_publisher, outFmt, ow, oh, AVRational{ fps, 1 }, vbitRate, vid,
+				ctx->width, ctx->height, ctx->pix_fmt,
+				rate, abitRate, aid,
+				AUDIO_CHANNEL, rate, sampleFmt,
+				opt);
 			if (!pec){
 				if (cb){
 					state.state = LIVE_ERROR;
@@ -242,6 +261,7 @@ namespace ff
 				break;
 			}
 
+			state.state = LIVE_FRAME;
 			liveLoop(pdc,pec,cb,&state);
 			break;
 		}

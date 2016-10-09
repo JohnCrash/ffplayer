@@ -510,15 +510,16 @@ namespace ff
 }
 
 using namespace ::ff;
-
 static int liveCallback(liveState *pls)
 {
-//	printf("live state : %d\n", pls->state);
+	//	printf("live state : %d\n", pls->state);
 	if (pls->state == LIVE_ERROR){
 		for (int i = 0; i < pls->nerror; i++){
 			printf(pls->errorMsg[i]);
 		}
 	}
+	if ((double)pls->ntimes / (double)AV_TIME_BASE > 60)
+		return 1;
 	return 0;
 }
 
@@ -606,10 +607,17 @@ int _tmain(int argc, _TCHAR* argv[])
 		h = _wtoi(argv[4]);
 		fps = _wtoi(argv[5]);
 	}
-	liveOnRtmp("rtmp://192.168.7.157/myapp/mystream",
-		video_name,w,h,fps,fmt_name,1024*1024,
-		audio_name,22050,"s16",32*1024,
-		liveCallback);
+	if (video_name){
+		printf("w = %d , h = %d , fps = %d\n",w,h,fps);
+	//	liveOnRtmp("rtmp://192.168.7.157/myapp/mystream",
+		liveOnRtmp("e:\\test.mp4",
+			video_name, w, h, fps, fmt_name, 1024 * 1024,
+			audio_name, 22050, "s16", 32 * 1024,
+			640,480,30,
+			liveCallback);
+	}else{
+		printf("Not found capture device.");
+	}
 #if 0
 	AVDictionary * opt = NULL;
 	int i, j;

@@ -1007,7 +1007,7 @@ namespace ff
 		{
 			if (open_audio(pec, audio_codec_id, 
 				in_ch,in_sampleRate,in_sampleFmt,
-				opt_arg) < 0)
+				NULL) < 0)
 			{
 				ffCloseEncodeContext(pec);
 				return NULL;

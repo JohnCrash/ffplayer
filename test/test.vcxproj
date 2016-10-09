@@ -63,6 +63,9 @@
     <PreBuildEvent>
       <Command>del $(OutDir)$(TargetName)$(TargetExt)</Command>
     </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>copy /y ..\..\ffmpeg-lf\build\win32\share\* $(OutDir)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>

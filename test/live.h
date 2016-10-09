@@ -7,6 +7,7 @@ namespace ff
 		LIVE_BEGIN,
 		LIVE_END,
 		LIVE_ERROR,
+		LIVE_FRAME,
 		LIVE_INFO,
 	};
 	struct liveState
@@ -20,13 +21,14 @@ namespace ff
 
 	typedef int(*liveCB)(liveState * pls);
 
-	/*
+	/**
 	 * 选择视频和音频俘获设备进行在线直播
 	 */
 	void liveOnRtmp(
 		const char * rtmp_publisher,
 		const char * camera_name, int w, int h, int fps, const char * pix_fmt_name,int vbitRate,
 		const char * phone_name, int rate, const char * sample_fmt_name, int abitRate,
+		int ow, int oh, int ofps,
 		liveCB cb);
 
 #define MAX_DEVICE_NAME_LENGTH 256
