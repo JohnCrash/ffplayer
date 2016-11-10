@@ -10,13 +10,16 @@ namespace ff
 		LIVE_FRAME,
 		LIVE_INFO,
 	};
+#define MAX_ERRORMSG_COUNT 8
+#define MAX_ERRORMSG_LENGTH 256
+
 	struct liveState
 	{
 		cbType state; 
 		int64_t nframes; //发送的帧数
 		int64_t ntimes; //直播的时间单位ns
 		int nerror; //错误数量
-		char errorMsg[4][256]; //错误信息
+		char errorMsg[MAX_ERRORMSG_COUNT][MAX_ERRORMSG_LENGTH]; //错误信息
 	};
 
 	typedef int(*liveCB)(liveState * pls);

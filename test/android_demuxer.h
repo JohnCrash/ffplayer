@@ -4,6 +4,7 @@
 
 #ifndef CAMERARTMP_ANDROID_DEMUXER_H
 #define CAMERARTMP_ANDROID_DEMUXER_H
+#ifdef __ANDROID__
 
 #include <pthread.h>
 #include "libavdevice/avdevice.h"
@@ -28,7 +29,7 @@ struct android_camera_ctx{
     AVPacketList *pktl;
 
     int eof;
-
+	int debug;
     int oes_texture;
     enum AVPixelFormat pixel_format;
     enum AVCodecID video_codec_id;
@@ -46,4 +47,5 @@ struct android_camera_ctx{
     int bufsize;
 };
 
+#endif
 #endif //CAMERARTMP_ANDROID_DEMUXER_H

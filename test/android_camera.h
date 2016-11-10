@@ -1,6 +1,7 @@
 #ifndef __ANDROID_CAMERA_H__
 #define __ANDROID_CAMERA_H__
 
+#ifdef __ANDROID__
 #include <stdint.h>
 #include <jni.h>
 #include "libavutil/attributes.h"
@@ -79,5 +80,5 @@ int android_autoFoucs(int b);
 void android_releaseBuffer(void * bufObj, unsigned char * buf);
 
 int android_setDemuxerCallback( AndroidDemuxerCB_t cb );
-
+#endif
 #endif

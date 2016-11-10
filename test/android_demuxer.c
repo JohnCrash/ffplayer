@@ -1,6 +1,7 @@
 //
 // Created by john on 2016/8/11.
 //
+#ifdef __ANDROID__
 #include "android_demuxer.h"
 
 #include "libavutil/parseutils.h"
@@ -16,6 +17,9 @@
 #define MAX_GRAB_BUFFER_SIZE (32*1024*1024)
 
 static AVFormatContext *_avctx = NULL;
+
+static int debug = 0;
+#define DEBUG(format,...) if(debug)av_log(_avctx,AV_LOG_VERBOSE,format, ##__VA_ARGS__)
 
 static int parse_device_name(AVFormatContext *avctx)
 {
@@ -200,7 +204,9 @@ android_list_device_options(AVFormatContext *avctx,enum androidDeviceType devtyp
 
 static void android_buffer_release(void *opaque, uint8_t *data)
 {
+	DEBUG("android_buffer_release");
     android_releaseBuffer(opaque,data);
+	DEBUG("android_buffer_release return");
 }
 /*
  * 俘获回调
@@ -211,14 +217,14 @@ static int android_grab_buffer(int type,void * bufObj,int buf_size,unsigned char
     struct android_camera_ctx *ctx;
     AVPacketList **ppktl, *pktl_next;
 
-    av_log(_avctx,AV_LOG_ERROR,"android_grab_buffer %d ,size=%d",type,buf_size);
+	DEBUG("android_grab_buffer %d ,size=%d",type,buf_size);
     if(type!=VIDEO_DATA && type!=AUDIO_DATA){
         return 0;
     }
     if(!_avctx){
         if(type==VIDEO_DATA)
             android_releaseBuffer(bufObj,buf);
-        av_log(_avctx, AV_LOG_ERROR, "android_grab_buffer _avctx=NULL'.\n");
+        av_log(_avctx, AV_LOG_VERBOSE, "android_grab_buffer _avctx=NULL'.\n");
         return 0;
     }
 
@@ -227,7 +233,7 @@ static int android_grab_buffer(int type,void * bufObj,int buf_size,unsigned char
     /*
      * 这里需要进行线程同步，标准生产消费模型
      */
-    av_log(_avctx,AV_LOG_ERROR,"grab lock");
+    DEBUG("android_grab_buffer : grab lock");
     pthread_mutex_lock(&ctx->mutex);
     /*
      * 这里必须考虑俘获缓冲区大小，如果读帧数据太慢导致缓冲区积累需要丢弃
@@ -238,9 +244,7 @@ static int android_grab_buffer(int type,void * bufObj,int buf_size,unsigned char
             android_releaseBuffer(bufObj,buf);
         pthread_cond_signal(&ctx->cond); //别免空队列无限等待
         pthread_mutex_unlock(&ctx->mutex);
-        av_log(_avctx,AV_LOG_ERROR,"grab signal");
-        av_log(_avctx,AV_LOG_ERROR,"grab unlock");
-        av_log(_avctx,AV_LOG_ERROR,"real-time buffer too full,frame dropped!");
+		DEBUG("android_grab_buffer : real-time buffer too full,frame dropped!");
         return 0;
     }
 
@@ -248,8 +252,7 @@ static int android_grab_buffer(int type,void * bufObj,int buf_size,unsigned char
     if(!pktl_next){
         pthread_cond_signal(&ctx->cond); //别免空队列无限等待
         pthread_mutex_unlock(&ctx->mutex);
-        av_log(_avctx,AV_LOG_ERROR,"grab signal -2");
-        av_log(_avctx,AV_LOG_ERROR,"grab unlock -2");
+		DEBUG("android_grab_buffer return : -2");
         return -2;
     }
     pktl_next->pkt.pts = timestramp;
@@ -276,8 +279,7 @@ static int android_grab_buffer(int type,void * bufObj,int buf_size,unsigned char
             av_free(pktl_next);
             pthread_cond_signal(&ctx->cond); //别免空队列无限等待
             pthread_mutex_unlock(&ctx->mutex);
-            av_log(_avctx,AV_LOG_ERROR,"grab signal -3");
-            av_log(_avctx,AV_LOG_ERROR,"grab unlock -3");
+			DEBUG("android_grab_buffer return : -3");
             return -3;
         }
 
@@ -294,8 +296,8 @@ static int android_grab_buffer(int type,void * bufObj,int buf_size,unsigned char
     ctx->bufsize += buf_size;
     pthread_cond_signal(&ctx->cond);
     pthread_mutex_unlock(&ctx->mutex);
-    av_log(_avctx,AV_LOG_ERROR,"grab signal end");
-    av_log(_avctx,AV_LOG_ERROR,"grab unlock end");
+
+	DEBUG("android_grab_buffer return : 0");
     return 0;
 }
 
@@ -406,11 +408,12 @@ static int add_device(AVFormatContext *avctx,enum androidDeviceType devtype)
         AVRational time_base;
         int width,height;
         int fmt,fps;
+		DEBUG("android_getDemuxerInfo : w:%d,h:%d,fmt:%d,fps:%d");
         if( android_getDemuxerInfo(&width,&height,&fmt,&fps,NULL,NULL,NULL)!=0 ){
             ret = AVERROR(ENOMEM);
             return ret;
         }
-
+		DEBUG("add_device VideoDevice");
         time_base = (AVRational) { 10000000/fps, 10000000 };
         st->avg_frame_rate = av_inv_q(time_base);
         st->r_frame_rate = av_inv_q(time_base);
@@ -422,6 +425,7 @@ static int add_device(AVFormatContext *avctx,enum androidDeviceType devtype)
         par->codec_id = AV_CODEC_ID_RAWVIDEO;
         par->bits_per_coded_sample = android_pixfmt_prebits(fmt);
     } else{
+		DEBUG("add_device AudioDevice");
         par->codec_type  = AVMEDIA_TYPE_AUDIO;
         par->format      = waveform_format(ctx->sample_size);
         par->codec_id    = waveform_codec_id(par->format);
@@ -441,6 +445,7 @@ static int android_read_header(AVFormatContext *avctx)
     struct android_camera_ctx * ctx;
     ctx = avctx->priv_data;
 
+	debug = ctx->debug;
     if (!ctx->list_devices && !parse_device_name(avctx)) {
         av_log(avctx, AV_LOG_ERROR, "Malformed android_camera input string.\n");
         return ret;
@@ -501,14 +506,16 @@ static int android_read_header(AVFormatContext *avctx)
     int iDevice = parse_device_id(ctx->device_name[VideoDevice]);
     if(iDevice>=0) {
         android_setDemuxerCallback(android_grab_buffer);
-        av_log(avctx,AV_LOG_INFO,"open android camera,oes=%d,dev=%d,w=%d,h=%d,pixfmt=%d,fps=%d,ch=%d,bits=%d,rate=%d",
+		
+		DEBUG("android_read_header android_openDemuxer:oes=%d,dev=%d,w=%d,h=%d,pixfmt=%d,fps=%d,ch=%d,bits=%d,rate=%d",
                ctx->oes_texture, iDevice, ctx->requested_width,
                ctx->requested_height,
                ctx->pixel_format, av_q2d(ctx->requested_framerate),
                ctx->channels, 16, ctx->sample_rate);
+			   
         android_pix_fmt = android_pixfmt2av(ctx->pixel_format);
         android_sample_fmt = 16;
-        ctx->oes_texture = -1;
+        
         int result = android_openDemuxer(ctx->oes_texture, iDevice, ctx->requested_width,
                                          ctx->requested_height,
                                          android_pix_fmt, av_q2d(ctx->requested_framerate),
@@ -548,6 +555,7 @@ static int android_read_header(AVFormatContext *avctx)
     }else{
         av_log(avctx, AV_LOG_ERROR, "android_read_header videoDevice = %s\n",ctx->device_name[VideoDevice]);
     }
+	DEBUG("android_read_header return %d",ret);
     return ret;
 }
 
@@ -559,12 +567,12 @@ static int android_read_packet(AVFormatContext *s, AVPacket *pkt)
     /*
      * 俘获线程和读取线程，需要同步处理
      */
-    av_log(_avctx,AV_LOG_ERROR,"android_read_packet");
+	DEBUG("android_read_packet :");
     while (!ctx->eof && !pktl) {
         //WaitForSingleObject(ctx->mutex, INFINITE);
-        av_log(_avctx,AV_LOG_ERROR,"android_read_packet lock");
+        DEBUG("	android_read_packet lock");
         pthread_mutex_lock(&ctx->mutex);
-        av_log(_avctx,AV_LOG_ERROR,"android_read_packet lock 1");
+        DEBUG("	android_read_packet lock in");
         pktl = ctx->pktl;
         if (pktl) {
             *pkt = pktl->pkt;
@@ -578,25 +586,25 @@ static int android_read_packet(AVFormatContext *s, AVPacket *pkt)
         if (!pktl) {
             if (_avctx==NULL || android_isClosed()) {
                 ctx->eof = 1;
-                av_log(_avctx,AV_LOG_ERROR,"android_read_packet eof=1");
+                DEBUG("	android_read_packet eof = 1");
             } else if (s->flags & AVFMT_FLAG_NONBLOCK) {
-                av_log(_avctx,AV_LOG_ERROR,"android_read_packet unlock error 0");
+                DEBUG("	android_read_packet unlock error 0");
                 pthread_mutex_unlock(&ctx->mutex);
-                av_log(_avctx,AV_LOG_ERROR,"android_read_packet unlock error");
+                DEBUG("	android_read_packet unlock error 1");
                 return AVERROR(EAGAIN);
             } else {
                 //WaitForMultipleObjects(2, ctx->event, 0, INFINITE);
-                av_log(_avctx,AV_LOG_ERROR,"android_read_packet wait 0");
+                DEBUG("	android_read_packet wait 0");
                 pthread_cond_wait(&ctx->cond,&ctx->mutex);
-                av_log(_avctx,AV_LOG_ERROR,"android_read_packet wait");
+                DEBUG("	android_read_packet wait 1");
             }
         }
-        av_log(_avctx,AV_LOG_ERROR,"android_read_packet unlock 0");
+        DEBUG("	android_read_packet unlock 0");
         pthread_mutex_unlock(&ctx->mutex);
-        av_log(_avctx,AV_LOG_ERROR,"android_read_packet unlock");
+        DEBUG("	android_read_packet unlock 1");
     }
 
-    av_log(_avctx,AV_LOG_ERROR,"android_read_packet return");
+    DEBUG("android_read_packet return ctx->eof = %d",ctx->eof);
     return ctx->eof ? AVERROR(EIO) : pkt->size;
 }
 
@@ -605,6 +613,7 @@ static int android_read_close(AVFormatContext *s)
     struct android_camera_ctx *ctx = s->priv_data;
     AVPacketList *pktl;
 
+	DEBUG("android_read_close");
     /*
      * 关闭android俘获设备，即使没有打开也可以调用
      */
@@ -634,7 +643,7 @@ static int android_read_close(AVFormatContext *s)
         av_free(pktl);
         pktl = next;
     }
-
+	DEBUG("android_read_close return");
     return 0;
 }
 
@@ -645,6 +654,7 @@ static const AVOption options[] = {
         { "pixel_format", "set video pixel format", OFFSET(pixel_format), AV_OPT_TYPE_PIXEL_FMT, {.i64 = AV_PIX_FMT_NONE}, -1, INT_MAX, DEC },
         { "framerate", "set video frame rate", OFFSET(framerate), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC },
         { "oes_texture", "set android preview oes texture", OFFSET(oes_texture), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, DEC },
+		{ "debug", "ouput debug info", OFFSET(debug), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, DEC },
         { "sample_format", "set audio sample width 8 or 16,32", OFFSET(sample_format), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, DEC },
         { "sample_rate", "set audio sample rate", OFFSET(sample_rate), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, DEC },
         { "sample_size", "set audio sample size", OFFSET(sample_size), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 16, DEC },
@@ -672,3 +682,4 @@ AVInputFormat ff_android_demuxer = {
         .flags          = AVFMT_NOFILE,
         .priv_class     = &android_class,
 };
+#endif

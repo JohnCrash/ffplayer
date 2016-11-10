@@ -12,7 +12,13 @@
 #include "libavutil/pixdesc.h"
 
 #define ERROR_BUFFER_SIZE 1024
-
+struct SwrContext * av_swr_alloc(int in_ch,int in_rate,enum AVSampleFormat in_fmt,
+						  int out_ch,int out_rate,enum AVSampleFormat out_fmt);
+struct SwsContext * av_sws_alloc(int in_w,int in_h,enum AVPixelFormat in_fmt,
+						  int out_w,int out_h,enum AVPixelFormat out_fmt);
+int av_decode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary *opt_arg);
+int av_encode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary *opt_arg);
+void av_ff_init();
 struct SwrContext * av_swr_alloc(int in_ch,int in_rate,enum AVSampleFormat in_fmt,
                           int out_ch,int out_rate,enum AVSampleFormat out_fmt)
 {
@@ -46,7 +52,7 @@ struct SwsContext * av_sws_alloc(int in_w,int in_h,enum AVPixelFormat in_fmt,
     return sws_getContext(in_w,in_h,in_fmt,out_w,out_h,out_fmt,SWS_BICUBIC, NULL, NULL, NULL);
 }
 
-int avcodec_decode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary *opt_arg)
+int av_decode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary *opt_arg)
 {
     AVCodec * codec;
     AVDictionary *opt = NULL;
@@ -71,7 +77,7 @@ int avcodec_decode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary 
     return 0;
 }
 
-int avcodec_encode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary *opt_arg)
+int av_encode_init(AVCodecContext *c,enum AVCodecID codec_id, AVDictionary *opt_arg)
 {
     AVCodec * codec;
     AVDictionary *opt = NULL;

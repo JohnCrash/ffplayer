@@ -43,6 +43,7 @@ namespace ff
 		const char *audio_device, int chancel, int bit, int rate,
 		AVDictionary * opt);
 
+	void ffSetOESTexture(int txt);
 	/*
 	 * 取得视频的帧率，宽度，高度
 	 */

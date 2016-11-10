@@ -1,4 +1,6 @@
+#ifdef __ANDROID__
 #include "android_camera.h"
+#include <string.h>
 #include <android/log.h>
 
 #define TAG "AndroidDemuxer"
@@ -9,7 +11,7 @@
 JniGetStaticMethodInfo_t jniGetStaticMethodInfo = NULL;
 
 static AndroidDemuxerCB_t _demuxerCB = NULL;
-
+						   
 typedef struct imageFormatName{
     int imageFormat;
     const char * imageFormatName;
@@ -35,6 +37,10 @@ static imageFormatName_t _ifns[] = {
         IMAGEFORMAT_NAME(YV12),
         IMAGEFORMAT_NAME(DEPTH16),
 };
+
+JNIEXPORT void JNICALL
+Java_org_ffmpeg_device_AndroidDemuxer_ratainBuffer(JNIEnv * env , jclass cls,
+int type, jbyteArray bobj,int len,int fmt,int p0,int p1,jlong timestramp);
 
 /*
  * 输入android图像格式标识，返回格式名称
@@ -220,6 +226,7 @@ void android_releaseBuffer(void * bufObj, unsigned char * buf)
 int android_setDemuxerCallback( AndroidDemuxerCB_t cb )
 {
     _demuxerCB = cb;
+	return 0;
 }
 
 int android_isClosed()
@@ -277,7 +284,9 @@ int type, jbyteArray bobj,int len,int fmt,int p0,int p1,jlong timestramp)
             jbyte *buf = (*env)->GetByteArrayElements(env, gobj, 0);
             if(_demuxerCB){
                 if(_demuxerCB(type, gobj, len, (unsigned char * ) buf,fmt,p0,p1,timestramp )) {
+					LOG("Java_org_ffmpeg_device_AndroidDemuxer_ratainBuffer android_releaseBuffer");
                     android_releaseBuffer(gobj,buf);
+					LOG("Java_org_ffmpeg_device_AndroidDemuxer_ratainBuffer android_closeDemuxer video");
                     android_closeDemuxer();
                 }
             }else{
@@ -287,13 +296,16 @@ int type, jbyteArray bobj,int len,int fmt,int p0,int p1,jlong timestramp)
     }else if(type==AUDIO_DATA){
         jbyte *buf = (*env)->GetByteArrayElements(env,bobj, 0);
         if ( _demuxerCB(type, bobj, len, (unsigned char * ) buf,fmt,p0,p1,timestramp )) {
+			LOG("Java_org_ffmpeg_device_AndroidDemuxer_ratainBuffer android_closeDemuxer audio");
             android_closeDemuxer();
         }
         (*env)->ReleaseByteArrayElements(env,bobj,(jbyte*)buf,JNI_ABORT);
     }else{
         if ( _demuxerCB(type, bobj, 0, NULL,fmt,p0,p1,timestramp )) {
+			LOG("Java_org_ffmpeg_device_AndroidDemuxer_ratainBuffer android_closeDemuxer");
             android_closeDemuxer();
         }
     }
     (*env)->DeleteLocalRef(env,bobj);
 }
+#endif

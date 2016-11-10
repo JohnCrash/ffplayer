@@ -2,6 +2,7 @@
 #include "live.h"
 #include "ffenc.h"
 #include "ffdec.h"
+#include "cocos2d.h"
 
 namespace ff
 {
@@ -57,7 +58,10 @@ namespace ff
 			ctimer = av_gettime_relative();
 			praw = ffReadFrame(pdc);
 
-			if (!praw)break;
+			if (!praw){
+				av_log(NULL, AV_LOG_ERROR, "liveLoop break : praw = NULL\n");
+				break;
+			}
 
 			retain_raw(praw);
 			if (!pdc->has_audio && begin_pts == 0){
@@ -71,7 +75,7 @@ namespace ff
 					int64_t bf = av_rescale_q(ctimer - stimer, AVRational{1,AV_TIME_BASE},video_time_base);
 					ncsyn = bf - nframe;
 					if (abs(ncsyn) > MAX_NSYN){
-						av_log(NULL, AV_LOG_ERROR, "video frame synchronize error, nsyn > MAX_NSYN , nsyn = %d\n", nsyn);
+						av_log(NULL, AV_LOG_ERROR, "liveLoop break : liveLoop video frame synchronize error, nsyn > MAX_NSYN , nsyn = %d\n", nsyn);
 						break;
 					}
 				}
@@ -91,15 +95,17 @@ namespace ff
 				//	av_log(NULL, AV_LOG_INFO, "ncsyn = %d\n",ncsyn );
 					praw->recount += ncsyn;
 					nframe += praw->recount;
-					if (ret = ffAddFrame(pec, praw) < 0)
+					if (ret = ffAddFrame(pec, praw) < 0){
+						av_log(NULL, AV_LOG_ERROR, "liveLoop break : ret < 0 , ret = %d\n",ret);
 						break;
+					}
 #ifdef _DEBUG
 		//					av_log(NULL, AV_LOG_INFO, "[V] ncsyn:%d timestrap:%I64d time: %.4fs\n",
 		//						ncsyn, praw->pts, (double)(ctimer - stimer) / (double)AV_TIME_BASE);
 #endif
 				}
 				else if (ncsyn > MAX_NSYN){
-					av_log(NULL, AV_LOG_ERROR, "video frame make up error, nsyn > MAX_NSYN , ncsyn = %d\n", ncsyn);
+					av_log(NULL, AV_LOG_ERROR, "liveLoop break : video frame make up error, nsyn > MAX_NSYN , ncsyn = %d\n", ncsyn);
 					break;
 				}
 				else{
@@ -129,7 +135,7 @@ namespace ff
 				nsynbt = ctimer;
 				nsyn += nsynacc;
 				if (abs(nsyn) > MAX_NSYN || abs(nsynacc) > MAX_NSYN ){
-					av_log(NULL, AV_LOG_ERROR, "video frame synchronize error, nsyn > MAX_NSYN , nsyn = %d nsynacc = %d\n", nsyn, nsynacc);
+					av_log(NULL, AV_LOG_ERROR, "liveLoop break : video frame synchronize error, nsyn > MAX_NSYN , nsyn = %d nsynacc = %d\n", nsyn, nsynacc);
 					if (cb && pls){
 						pls->state = LIVE_ERROR;
 						cb(pls);
@@ -141,7 +147,7 @@ namespace ff
 				 */
 				double dsyn = (double)abs(ctimer - stimer - at)/(double)AV_TIME_BASE;
 				if (dsyn > MAX_ASYN){
-					av_log(NULL, AV_LOG_ERROR, "audio frame synchronize error, dsyn > MAX_ASYN , nsyn = %.4f\n", dsyn);
+					av_log(NULL, AV_LOG_ERROR, "liveLoop break : audio frame synchronize error, dsyn > MAX_ASYN , nsyn = %.4f\n", dsyn);
 					if (cb && pls){
 						pls->state = LIVE_ERROR;
 						cb(pls);
@@ -151,24 +157,45 @@ namespace ff
 #ifdef _DEBUG
 				av_log(NULL, AV_LOG_INFO, "[A] nsyn:%d dsyn:%.4fs acc=%d timestrap:%I64d time: %.4fs bs:%.2fmb\n",
 					nsyn, dsyn, nsynacc,praw->pts, (double)(ctimer - stimer) / (double)AV_TIME_BASE, (double)ffGetBufferSizeKB(pec) / 1024.0);
-				//av_log(NULL, AV_LOG_INFO, "nsyn:%d , dsyn:%.4fs , buffer size:%.4fmb\n", 
-				//	nsyn, dsyn, (double)ffGetBufferSizeKB(pec)/1024.0);
 #endif
+				cocos2d::CCLog("[A] nsyn:%d dsyn:%.4fs acc=%d timestrap:%I64d time: %.4fs bs:%.2fmb\n",
+					nsyn, dsyn, nsynacc, praw->pts, (double)(ctimer - stimer) / (double)AV_TIME_BASE, (double)ffGetBufferSizeKB(pec) / 1024.0);
+
 				nsynacc = 0;
 			}
 			/*
 			 * �ص�
 			 */
-			if (nframe % 8 == 0){
+			if (nframe % 2 == 0){
 				if (cb && pls){
 					pls->nframes = nframe;
 					pls->ntimes = ctimer - stimer;
-					if (cb(pls))break;
+					if (cb(pls)){
+						av_log(NULL, AV_LOG_ERROR, "liveLoop break : nframe % 2 == 0 ,nframe = %d\n",nframe);
+						break;
+					}
 				}
 			}
 			release_raw(praw);
 		}
 		release_raw(praw);
+	}
+	static liveState state;
+	static void to_cclog(const char *format, va_list arg)
+	{
+		char szLine[1024 * 8];
+		vsprintf(szLine, format, arg);
+		cocos2d::CCLog(szLine, "");
+	}
+	static void log_callback(void * acl, int level, const char *format, va_list arg)
+	{
+		if (level == AV_LOG_ERROR || level == AV_LOG_FATAL){
+			if (state.nerror > MAX_ERRORMSG_COUNT)
+				state.nerror = 0;
+			snprintf(state.errorMsg[state.nerror++], MAX_ERRORMSG_LENGTH, format, arg);
+		}
+		av_log_default_callback(acl, level, format, arg);
+		to_cclog(format,arg);
 	}
 
 	void liveOnRtmp(
@@ -182,32 +209,29 @@ namespace ff
 		AVEncodeContext * pec = NULL;
 		AVDictionary *opt = NULL;
 		AVCodecID vid, aid;
-		AVPixelFormat pixFmt = av_get_pix_fmt(pix_fmt_name);
-		AVSampleFormat sampleFmt = av_get_sample_fmt(sample_fmt_name);
-		liveState state;
+		AVPixelFormat pixFmt = pix_fmt_name ? av_get_pix_fmt(pix_fmt_name) : AV_PIX_FMT_NONE;
+		AVSampleFormat sampleFmt = sample_fmt_name ? av_get_sample_fmt(sample_fmt_name) : AV_SAMPLE_FMT_NONE;
+		
 		const char *outFmt;
 
+		cocos2d::CCLog("liveOnRtmp rtmp_publisher:%s\ncamera_name = %s,w=%d h=%d fps=%d,pix_fmt_name=%s,vbitRate=%d,\n\
+						phone_name = %s , rate=%d sample_fmt_name=%s abitRate=%d\n\
+						ow = %d,oh = %d,ofps = %d",
+						rtmp_publisher ? rtmp_publisher:"", camera_name ? camera_name : "", 
+						w, h, fps, pix_fmt_name ? pix_fmt_name : "", vbitRate,
+						phone_name ? phone_name:"", rate, sample_fmt_name ? sample_fmt_name : "", 
+						abitRate,ow,oh,ofps);
+
 		memset(&state, 0, sizeof(state));
-		static auto log_cb = [&](void * acl, int level, const char *format, va_list arg)->void
-		{
-			if (level == AV_LOG_ERROR || level == AV_LOG_FATAL){
-				if (state.nerror<4)
-					snprintf(state.errorMsg[state.nerror++], 256, format, arg);
-			}
-			av_log_default_callback(acl,level,format,arg);
-		};
 
 		if (cb){
 			state.state = LIVE_BEGIN;
 			cb(&state);
 		}
 
-		av_log_set_callback(
-			[](void * acl, int level, const char *format, va_list arg)->void
-				{
-					log_cb(acl, level, format, arg);
-				}
-			);
+		ffInit();
+		
+		av_log_set_callback(log_callback);
 
 		av_dict_set(&opt, "strict", "-2", 0);
 		av_dict_set(&opt, "threads", "4", 0);
@@ -266,14 +290,17 @@ namespace ff
 			break;
 		}
 
+		cocos2d::CCLog("=================liveOnRtmp be close==================");
+		//马上把俘获设备关闭
+		if (pdc){
+			ffCloseDecodeContext(pdc);
+		}
+		//将为发送的数据发送出去然后关闭
 		if (pec){
 			ffFlush(pec);
 			ffCloseEncodeContext(pec);
 		}
-		if (pdc){
-			ffCloseDecodeContext(pdc);
-		}
-
+		//通知回调，直播结束
 		if (cb){
 			if (state.nerror){
 				state.state = LIVE_ERROR;
@@ -282,7 +309,10 @@ namespace ff
 			state.state = LIVE_END;
 			cb(&state);
 		}
+		cocos2d::CCLog("=================liveOnRtmp closed==================");
 		av_log_set_callback(av_log_default_callback);
-		av_dict_free(&opt);
+		//cocos2d::CCLog("=================liveOnRtmp free opt==================");
+		//av_dict_free(&opt);
+		//cocos2d::CCLog("=================liveOnRtmp end==================");
 	}
 }
